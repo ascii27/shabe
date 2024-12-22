@@ -1,3 +1,11 @@
+# IDE
+.idea/
+.vscode/
+
+# Binary
+shabe
+
+# Config files
 config.yaml
 .env
 *.env

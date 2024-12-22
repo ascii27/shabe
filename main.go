@@ -6,82 +6,55 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"sync"
+	"os"
+	"path/filepath"
+	"time"
 
-	"shabe/config"
-
+	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
 	"github.com/sashabaranov/go-openai"
+	"shabe/chat"
+	"shabe/config"
 )
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return true // Allow all origins for demo
-	},
+func init() {
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
+	log.SetOutput(os.Stdout)
 }
 
-type Client struct {
-	hub      *Hub
-	conn     *websocket.Conn
-	send     chan []byte
-	language string
-}
-
-type Hub struct {
-	clients    map[*Client]bool
-	broadcast  chan []byte
-	register   chan *Client
-	unregister chan *Client
-	openAI     *openai.Client
-}
+var (
+	upgrader = websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool {
+			log.Printf("Checking origin: %s", r.Header.Get("Origin"))
+			return true // Allow all origins for now
+		},
+		HandshakeTimeout: 10 * time.Second,
+	}
+	roomManager  = chat.NewRoomManager()
+	openaiClient *openai.Client
+)
 
 type Message struct {
 	Type     string `json:"type"`
+	RoomID   string `json:"roomId"`
 	Text     string `json:"text,omitempty"`
 	Language string `json:"language,omitempty"`
 }
 
-func newHub(openAIKey string) *Hub {
-	return &Hub{
-		broadcast:  make(chan []byte),
-		register:   make(chan *Client),
-		unregister: make(chan *Client),
-		clients:    make(map[*Client]bool),
-		openAI:     openai.NewClient(openAIKey),
-	}
+type Client struct {
+	conn     *websocket.Conn
+	room     *chat.Room
+	language string
 }
 
-func (h *Hub) run() {
-	for {
-		select {
-		case client := <-h.register:
-			h.clients[client] = true
-		case client := <-h.unregister:
-			if _, ok := h.clients[client]; ok {
-				delete(h.clients, client)
-				close(client.send)
-			}
-		case message := <-h.broadcast:
-			for client := range h.clients {
-				select {
-				case client.send <- message:
-				default:
-					close(client.send)
-					delete(h.clients, client)
-				}
-			}
-		}
-	}
-}
-
-func (h *Hub) translateText(text, fromLang, toLang string) (string, error) {
-	if fromLang == toLang {
+func translateText(text, fromLang, toLang string) (string, error) {
+	if fromLang == toLang || openaiClient == nil {
 		return text, nil
 	}
 
-	prompt := "Translate the following text from " + fromLang + " to " + toLang + ":\n\n" + text
+	prompt := fmt.Sprintf("Translate the following text from %s to %s:\n\n%s", fromLang, toLang, text)
 
-	resp, err := h.openAI.CreateChatCompletion(
+	resp, err := openaiClient.CreateChatCompletion(
 		context.Background(),
 		openai.ChatCompletionRequest{
 			Model: openai.GPT3Dot5Turbo,
@@ -95,132 +68,114 @@ func (h *Hub) translateText(text, fromLang, toLang string) (string, error) {
 	)
 
 	if err != nil {
-		return "", err
+		return text, err // Return original text on error
 	}
 
 	return resp.Choices[0].Message.Content, nil
 }
 
-func (c *Client) readPump() {
+func handleWebSocket(w http.ResponseWriter, r *http.Request) {
+	log.Printf("WebSocket connection attempt from %s", r.RemoteAddr)
+	
+	roomID := r.URL.Query().Get("roomId")
+	if roomID == "" {
+		log.Printf("Error: No room ID provided")
+		http.Error(w, "Room ID is required", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("Attempting to upgrade connection for room: %s", roomID)
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("Error: Failed to upgrade connection: %v", err)
+		return
+	}
+
+	log.Printf("Successfully upgraded connection for room: %s", roomID)
+
+	room := roomManager.GetOrCreateRoom(roomID)
+	client := &Client{
+		conn:     conn,
+		room:     room,
+		language: "en", // Default language
+	}
+
+	room.AddClient(conn)
 	defer func() {
-		c.hub.unregister <- c
-		c.conn.Close()
+		room.RemoveClient(conn)
+		conn.Close()
 	}()
 
+	// Handle incoming messages
 	for {
-		_, message, err := c.conn.ReadMessage()
+		_, msgBytes, err := conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("error: %v", err)
-			}
+			log.Printf("Error reading message: %v", err)
 			break
 		}
 
 		var msg Message
-		if err := json.Unmarshal(message, &msg); err != nil {
-			log.Printf("error unmarshaling message: %v", err)
+		if err := json.Unmarshal(msgBytes, &msg); err != nil {
+			log.Printf("Error unmarshaling message: %v", err)
 			continue
 		}
 
 		switch msg.Type {
 		case "preferences":
-			c.language = msg.Language
+			client.language = msg.Language
+			room.SetClientLanguage(conn, msg.Language)
+			log.Printf("Updated client language to: %s", msg.Language)
+
 		case "message":
-			var wg sync.WaitGroup
-			for client := range c.hub.clients {
-				if client == c {
-					continue
-				}
-
-				wg.Add(1)
-				go func(client *Client) {
-					defer wg.Done()
-					translatedText, err := c.hub.translateText(msg.Text, msg.Language, client.language)
-					if err != nil {
-						log.Printf("translation error: %v", err)
-						return
-					}
-
-					response := Message{
-						Type: "message",
-						Text: translatedText,
-					}
-
-					responseJSON, err := json.Marshal(response)
-					if err != nil {
-						log.Printf("error marshaling response: %v", err)
-						return
-					}
-
-					client.send <- responseJSON
-				}(client)
+			if msg.RoomID != roomID {
+				continue
 			}
-			wg.Wait()
+
+			// Get all clients in the room
+			room.BroadcastTranslatedMessage(msg.Text, msg.Language, client.conn, func(text, targetLang string) (string, error) {
+				return translateText(text, msg.Language, targetLang)
+			})
 		}
 	}
-}
-
-func (c *Client) writePump() {
-	defer func() {
-		c.conn.Close()
-	}()
-
-	for {
-		message, ok := <-c.send
-		if !ok {
-			c.conn.WriteMessage(websocket.CloseMessage, []byte{})
-			return
-		}
-
-		if err := c.conn.WriteMessage(websocket.TextMessage, message); err != nil {
-			return
-		}
-	}
-}
-
-func serveWs(hub *Hub, w http.ResponseWriter, r *http.Request) {
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Println(err)
-		return
-	}
-
-	client := &Client{
-		hub:      hub,
-		conn:     conn,
-		send:     make(chan []byte, 256),
-		language: "en",
-	}
-	client.hub.register <- client
-
-	go client.writePump()
-	go client.readPump()
 }
 
 func main() {
+	log.Println(" Starting Shabe chat server...")
+
 	cfg, err := config.LoadConfig("")
 	if err != nil {
-		log.Fatal("Failed to load config: ", err)
+		log.Printf("Warning: Failed to load config: %v", err)
+	} else if cfg.OpenAIApiKey != "" {
+		openaiClient = openai.NewClient(cfg.OpenAIApiKey)
+		log.Println("OpenAI translation enabled")
+	} else {
+		log.Println("OpenAI translation disabled - no API key provided")
 	}
 
-	if cfg.OpenAIApiKey == "" {
-		log.Fatal("OpenAI API key is required")
-	}
+	r := mux.NewRouter()
 
-	hub := newHub(cfg.OpenAIApiKey)
-	go hub.run()
+	// WebSocket endpoint - must be defined before the catch-all handler
+	r.HandleFunc("/ws", handleWebSocket)
 
-	http.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		serveWs(hub, w, r)
-	})
-
-	// Serve static files from the frontend directory
+	// Serve static files
 	fs := http.FileServer(http.Dir("frontend"))
-	http.Handle("/", fs)
+	r.PathPrefix("/").Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("HTTP request: %s %s", r.Method, r.URL.Path)
+		// If the file doesn't exist, serve index.html
+		path := filepath.Join("frontend", r.URL.Path)
+		_, err := os.Stat(path)
+		if os.IsNotExist(err) {
+			http.ServeFile(w, r, "frontend/index.html")
+			return
+		}
+		fs.ServeHTTP(w, r)
+	}))
 
-	serverAddr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	log.Printf("Server starting on %s", serverAddr)
-	if err := http.ListenAndServe(serverAddr, nil); err != nil {
-		log.Fatal("ListenAndServe: ", err)
+	port := ":8080"
+	if cfg != nil && cfg.Server.Port != 0 {
+		port = fmt.Sprintf(":%d", cfg.Server.Port)
 	}
+
+	log.Printf("Server starting on http://localhost%s", port)
+	log.Fatal(http.ListenAndServe(port, r))
 }
