@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real-time Translation Chat</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        #chat-container {
+            height: 400px;
+            border: 1px solid #ccc;
+            overflow-y: auto;
+            margin-bottom: 20px;
+            padding: 10px;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .received {
+            background-color: #e9ecef;
+        }
+        .sent {
+            background-color: #d4edda;
+            margin-left: 20%;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        select, button {
+            padding: 8px;
+            font-size: 16px;
+        }
+        #status {
+            color: #666;
+            margin-bottom: 10px;
+        }
+        #recording-status {
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <h1>Real-time Translation Chat</h1>
+    <div class="controls">
+        <select id="language">
+            <option value="en">English</option>
+            <option value="ja">Japanese</option>
+            <option value="es">Spanish</option>
+            <option value="fr">French</option>
+        </select>
+        <button id="start-button">Start Speaking</button>
+        <button id="stop-button" disabled>Stop Speaking</button>
+    </div>
+    <div id="status">Not connected</div>
+    <div id="recording-status"></div>
+    <div id="chat-container"></div>
+    <script src="main.js"></script>
+</body>
+</html>
