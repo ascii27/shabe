@@ -1,5 +1,6 @@
-// Store the window ID
+// Store the window ID and active tab ID
 let windowId = null;
+let activeTabId = null;
 
 // Handle extension icon click
 chrome.action.onClicked.addListener(() => {
@@ -26,25 +27,54 @@ chrome.action.onClicked.addListener(() => {
 chrome.windows.onRemoved.addListener((removedWindowId) => {
   if (removedWindowId === windowId) {
     windowId = null;
+    activeTabId = null;
   }
+});
+
+// Keep track of the active tab
+chrome.tabs.onActivated.addListener((activeInfo) => {
+  activeTabId = activeInfo.tabId;
 });
 
 // Handle messages from the popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'INJECT_SPEECH_RECOGNITION') {
-    // Inject the content script into the active tab
-    chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-      if (tabs[0]) {
-        chrome.scripting.executeScript({
-          target: {tabId: tabs[0].id},
-          function: injectSpeechRecognition,
-          args: [request.language]
-        });
-      }
-    });
+    // Get the active tab if we don't have one
+    if (!activeTabId) {
+      chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
+        if (tabs[0]) {
+          activeTabId = tabs[0].id;
+          injectSpeechRecognitionScript(activeTabId, request.language);
+        }
+      });
+    } else {
+      injectSpeechRecognitionScript(activeTabId, request.language);
+    }
+    return true;
+  } else if (request.type === 'STOP_SPEECH_RECOGNITION') {
+    if (activeTabId) {
+      chrome.scripting.executeScript({
+        target: {tabId: activeTabId},
+        function: stopSpeechRecognition
+      });
+    }
     return true;
   }
 });
+
+function injectSpeechRecognitionScript(tabId, language) {
+  chrome.scripting.executeScript({
+    target: {tabId: tabId},
+    function: injectSpeechRecognition,
+    args: [language]
+  }).catch((err) => {
+    console.error('Failed to inject script:', err);
+    chrome.runtime.sendMessage({
+      type: 'SPEECH_ERROR',
+      error: 'Failed to start speech recognition. Please make sure you have an active tab open.'
+    });
+  });
+}
 
 // This function will be injected into the page
 function injectSpeechRecognition(language) {
@@ -87,21 +117,6 @@ function injectSpeechRecognition(language) {
     chrome.runtime.sendMessage({type: 'SPEECH_ERROR', error: error.message});
   }
 }
-
-// Handle stopping speech recognition
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.type === 'STOP_SPEECH_RECOGNITION') {
-    chrome.tabs.query({active: true, currentWindow: true}, (tabs) => {
-      if (tabs[0]) {
-        chrome.scripting.executeScript({
-          target: {tabId: tabs[0].id},
-          function: stopSpeechRecognition
-        });
-      }
-    });
-    return true;
-  }
-});
 
 function stopSpeechRecognition() {
   if (window.shabeRecognition) {

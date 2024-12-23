@@ -18,17 +18,17 @@
                 <option value="fr">French</option>
                 <option value="de">German</option>
             </select>
+            <div id="status">Not connected</div>
+            <button id="start-button">Start Speaking</button>
+            <button id="stop-button" disabled>Stop Speaking</button>
         </div>
         <div id="chat-container" style="display: none;">
             <div id="messages"></div>
             <div class="input-container">
                 <input type="text" id="messageInput" placeholder="Type your message...">
                 <button id="send-button">Send</button>
-                <button id="start-button">Start Speaking</button>
-                <button id="stop-button" disabled>Stop Speaking</button>
             </div>
         </div>
-        <div id="status">Not connected</div>
     </div>
     <script src="popup.js"></script>
 </body>
