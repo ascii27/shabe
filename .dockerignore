@@ -1,0 +1,27 @@
+# Git
+.git
+.gitignore
+
+# IDE
+.idea
+.vscode
+
+# Docker
+docker
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Config
+config.yaml
+.env
+*.env
+
+# Build artifacts
+shabe
+
+# Other
+README.md
+LICENSE
+*.md
+tmp_docker/
