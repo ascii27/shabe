@@ -5,13 +5,17 @@
   "description": "Instant multilingual chat with real-time translation",
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "scripting"
   ],
   "host_permissions": [
     "http://localhost:8080/*",
     "ws://localhost:8080/*"
   ],
-  "optional_permissions": ["audioCapture"],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
   "action": {
     "default_popup": "popup.html",
     "default_icon": {
@@ -26,6 +30,6 @@
     "128": "icons/icon128.png"
   },
   "content_security_policy": {
-    "extension_pages": "script-src 'self'; object-src 'self'; media-src *"
+    "extension_pages": "script-src 'self'; object-src 'self'"
   }
 }
