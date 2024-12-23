@@ -17,6 +17,18 @@ document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('language').value = result.language;
         }
     });
+
+    // Listen for messages from the background script
+    chrome.runtime.onMessage.addListener((message) => {
+        if (message.type === 'MEET_ROOM_ID') {
+            const roomInput = document.getElementById('roomInput');
+            // Only auto-join if we're not already in a room or in a different room
+            if (!currentRoom || currentRoom !== message.roomId) {
+                roomInput.value = message.roomId;
+                joinRoom();
+            }
+        }
+    });
 });
 
 function setupEventListeners() {

@@ -7,11 +7,13 @@
     "activeTab",
     "storage",
     "scripting",
-    "windows"
+    "windows",
+    "tabs"
   ],
   "host_permissions": [
     "http://localhost:8080/*",
-    "ws://localhost:8080/*"
+    "ws://localhost:8080/*",
+    "https://meet.google.com/*"
   ],
   "background": {
     "service_worker": "background.js",
