@@ -6,21 +6,25 @@
 </head>
 <body>
     <div class="container">
-        <div class="room-container">
-            <input type="text" id="roomInput" placeholder="Enter Room ID">
-            <button id="join-room-button">Join Room</button>
-            <select id="language">
-                <option value="en">English</option>
-                <option value="ja">Japanese</option>
-                <option value="ko">Korean</option>
-                <option value="zh">Chinese</option>
-                <option value="es">Spanish</option>
-                <option value="fr">French</option>
-                <option value="de">German</option>
-            </select>
+        <div class="controls">
+            <div class="room-controls">
+                <input type="text" id="roomInput" placeholder="Enter Room ID">
+                <button id="join-room-button">Join Room</button>
+            </div>
+            <div class="language-controls">
+                <select id="language">
+                    <option value="en">English</option>
+                    <option value="ja">Japanese</option>
+                    <option value="ko">Korean</option>
+                    <option value="zh">Chinese</option>
+                    <option value="es">Spanish</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                </select>
+                <button id="start-button">Start Speaking</button>
+                <button id="stop-button" disabled>Stop Speaking</button>
+            </div>
             <div id="status">Not connected</div>
-            <button id="start-button">Start Speaking</button>
-            <button id="stop-button" disabled>Stop Speaking</button>
         </div>
         <div id="chat-container" style="display: none;">
             <div id="messages"></div>
