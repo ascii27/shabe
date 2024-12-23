@@ -1,10 +1,12 @@
 let ws = null;
 let currentRoom = null;
 let isRecording = false;
+let recognition = null;
 
 // Initialize DOM elements after the document is loaded
 document.addEventListener('DOMContentLoaded', () => {
     setupEventListeners();
+    setupSpeechRecognition();
     
     // Load last used room and language from storage
     chrome.storage.sync.get(['roomId', 'language'], (result) => {
@@ -13,33 +15,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (result.language) {
             document.getElementById('language').value = result.language;
-        }
-    });
-
-    // Listen for messages from the background script
-    chrome.runtime.onMessage.addListener((message) => {
-        switch (message.type) {
-            case 'SPEECH_START':
-                document.getElementById('status').textContent = 'Listening...';
-                document.getElementById('start-button').disabled = true;
-                document.getElementById('stop-button').disabled = false;
-                break;
-            case 'SPEECH_END':
-                document.getElementById('status').textContent = 'Stopped listening';
-                document.getElementById('start-button').disabled = false;
-                document.getElementById('stop-button').disabled = true;
-                isRecording = false;
-                break;
-            case 'SPEECH_RESULT':
-                sendMessage(message.text);
-                break;
-            case 'SPEECH_ERROR':
-                console.error('Speech recognition error:', message.error);
-                document.getElementById('status').textContent = `Error: ${message.error}`;
-                document.getElementById('start-button').disabled = false;
-                document.getElementById('stop-button').disabled = true;
-                isRecording = false;
-                break;
         }
     });
 });
@@ -67,9 +42,8 @@ function setupEventListeners() {
         chrome.storage.sync.set({ language });
 
         // Update speech recognition language if active
-        if (isRecording) {
-            stopRecording();
-            startRecording();
+        if (recognition) {
+            recognition.lang = getSpeechLangCode(language);
         }
     });
 
@@ -78,20 +52,80 @@ function setupEventListeners() {
     document.getElementById('stop-button').addEventListener('click', stopRecording);
 }
 
+function setupSpeechRecognition() {
+    if (!('webkitSpeechRecognition' in window)) {
+        console.error('Speech recognition not supported');
+        document.getElementById('start-button').disabled = true;
+        document.getElementById('stop-button').disabled = true;
+        document.getElementById('status').textContent = 'Speech recognition not supported';
+        return;
+    }
+
+    recognition = new webkitSpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.lang = getSpeechLangCode(document.getElementById('language').value);
+
+    recognition.onstart = () => {
+        document.getElementById('status').textContent = 'Listening...';
+        document.getElementById('start-button').disabled = true;
+        document.getElementById('stop-button').disabled = false;
+    };
+
+    recognition.onend = () => {
+        document.getElementById('status').textContent = 'Stopped listening';
+        document.getElementById('start-button').disabled = false;
+        document.getElementById('stop-button').disabled = true;
+        isRecording = false;
+    };
+
+    recognition.onresult = (event) => {
+        const result = event.results[event.results.length - 1];
+        if (result.isFinal) {
+            const text = result[0].transcript.trim();
+            if (text) {
+                sendMessage(text);
+            }
+        }
+    };
+
+    recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        document.getElementById('status').textContent = `Error: ${event.error}`;
+        document.getElementById('start-button').disabled = false;
+        document.getElementById('stop-button').disabled = true;
+        isRecording = false;
+    };
+}
+
 function startRecording() {
-    const language = getSpeechLangCode(document.getElementById('language').value);
-    chrome.runtime.sendMessage({
-        type: 'INJECT_SPEECH_RECOGNITION',
-        language: language
-    });
+    if (!recognition) {
+        document.getElementById('status').textContent = 'Speech recognition not available';
+        return;
+    }
+    
     isRecording = true;
+    try {
+        recognition.start();
+    } catch (error) {
+        console.error('Failed to start recording:', error);
+        document.getElementById('status').textContent = 'Failed to start recording';
+        stopRecording();
+    }
 }
 
 function stopRecording() {
-    chrome.runtime.sendMessage({
-        type: 'STOP_SPEECH_RECOGNITION'
-    });
+    if (!recognition) return;
+    
     isRecording = false;
+    try {
+        recognition.stop();
+    } catch (error) {
+        console.error('Failed to stop recording:', error);
+    }
+    document.getElementById('start-button').disabled = false;
+    document.getElementById('stop-button').disabled = true;
+    document.getElementById('status').textContent = 'Stopped listening';
 }
 
 function joinRoom() {
