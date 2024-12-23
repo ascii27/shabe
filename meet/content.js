@@ -1,6 +1,7 @@
 let ws = null;
 let currentRoom = null;
 let selectedLanguage = 'en';
+let isUIVisible = true;
 
 // Function to extract room ID from Google Meet URL
 function extractMeetRoomId(url) {
@@ -11,8 +12,17 @@ function extractMeetRoomId(url) {
 
 // Function to create and inject the translator UI
 function createTranslatorUI() {
+  console.log('Creating translator UI...');
+  
+  // Remove existing UI if present
+  const existingUI = document.querySelector('.shabe-translator');
+  if (existingUI) {
+    existingUI.remove();
+  }
+  
   const container = document.createElement('div');
   container.className = 'shabe-translator';
+  container.style.display = isUIVisible ? 'flex' : 'none';
   
   const languageSelect = document.createElement('select');
   languageSelect.id = 'shabe-language';
@@ -49,36 +59,30 @@ function createTranslatorUI() {
   container.appendChild(languageSelect);
   container.appendChild(status);
   
-  // Find Google Meet's right panel and insert our UI
-  const observer = new MutationObserver((mutations, obs) => {
-    const rightPanel = document.querySelector('[data-meeting-panel-id="1"]');
-    if (rightPanel) {
-      rightPanel.parentElement.insertBefore(container, rightPanel);
-      obs.disconnect();
-      
-      // Load saved language preference
-      chrome.storage.sync.get(['language'], (result) => {
-        if (result.language) {
-          languageSelect.value = result.language;
-          selectedLanguage = result.language;
-        }
-      });
-      
-      // Connect to WebSocket
-      connectToRoom();
+  // Insert the UI into the document
+  document.body.appendChild(container);
+  console.log('Translator UI created and inserted');
+  
+  // Load saved language preference
+  chrome.storage.sync.get(['language'], (result) => {
+    if (result.language) {
+      languageSelect.value = result.language;
+      selectedLanguage = result.language;
     }
   });
   
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
+  // Connect to WebSocket
+  connectToRoom();
 }
 
 // Function to connect to WebSocket
 function connectToRoom() {
+  console.log('Connecting to room...');
   const roomId = extractMeetRoomId(window.location.href);
-  if (!roomId) return;
+  if (!roomId) {
+    console.log('No room ID found');
+    return;
+  }
   
   if (ws) {
     ws.close();
@@ -86,15 +90,25 @@ function connectToRoom() {
   
   currentRoom = roomId;
   const wsUrl = `ws://localhost:8080/ws?roomId=${currentRoom}`;
+  console.log('Connecting to WebSocket:', wsUrl);
+  
   ws = new WebSocket(wsUrl);
   
   ws.onopen = () => {
-    document.getElementById('shabe-status').textContent = 'Connected';
+    console.log('WebSocket connected');
+    const status = document.getElementById('shabe-status');
+    if (status) {
+      status.textContent = 'Connected';
+    }
     sendPreferences();
   };
   
   ws.onclose = () => {
-    document.getElementById('shabe-status').textContent = 'Disconnected';
+    console.log('WebSocket disconnected');
+    const status = document.getElementById('shabe-status');
+    if (status) {
+      status.textContent = 'Disconnected';
+    }
     setTimeout(() => {
       if (currentRoom) {
         connectToRoom();
@@ -105,14 +119,17 @@ function connectToRoom() {
   ws.onmessage = (event) => {
     const message = JSON.parse(event.data);
     if (message.type === 'message') {
-      // TODO: Display translated messages in the Meet UI
       console.log('Received message:', message.text);
+      // TODO: Display translated messages in the Meet UI
     }
   };
   
   ws.onerror = (error) => {
     console.error('WebSocket error:', error);
-    document.getElementById('shabe-status').textContent = 'Connection error';
+    const status = document.getElementById('shabe-status');
+    if (status) {
+      status.textContent = 'Connection error';
+    }
   };
 }
 
@@ -128,15 +145,40 @@ function sendPreferences() {
   ws.send(JSON.stringify(message));
 }
 
+// Function to toggle UI visibility
+function toggleUI() {
+  console.log('Toggling UI visibility');
+  const translator = document.querySelector('.shabe-translator');
+  if (translator) {
+    isUIVisible = !isUIVisible;
+    translator.style.display = isUIVisible ? 'flex' : 'none';
+  } else {
+    console.log('No translator UI found, creating one...');
+    isUIVisible = true;
+    createTranslatorUI();
+  }
+}
+
+// Listen for messages from the background script
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('Received message:', message);
+  if (message.type === 'TOGGLE_UI') {
+    toggleUI();
+  }
+  return true;
+});
+
 // Listen for URL changes (for when user switches rooms)
 let lastUrl = window.location.href;
 new MutationObserver(() => {
   const url = window.location.href;
   if (url !== lastUrl) {
+    console.log('URL changed:', url);
     lastUrl = url;
     connectToRoom();
   }
 }).observe(document, { subtree: true, childList: true });
 
-// Initialize
+// Initialize when the page is ready
+console.log('Content script loaded, creating UI...');
 createTranslatorUI();
