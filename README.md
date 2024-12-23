@@ -20,7 +20,7 @@ The Chrome extension integrates directly with Google Meet and provides the user 
 
 1. Clone this repository:
 ```bash
-git clone https://github.com/yourusername/shabe.git
+git clone https://github.com/ascii27/shabe.git
 cd shabe
 ```
 
@@ -40,10 +40,21 @@ The WebSocket server handles the translation requests and manages room connectio
 
 - Go 1.21 or later
 - Docker (optional, for containerized deployment)
+- OpenAI API Key
+
+#### Environment Variables
+
+- `OPENAI_API_KEY` (required): Your OpenAI API key for translation
+- `PORT` (optional): Server port number (default: 8080)
 
 #### Running Locally
 
-1. Start the server:
+1. Set your OpenAI API key:
+```bash
+export OPENAI_API_KEY=your_api_key_here
+```
+
+2. Start the server:
 ```bash
 go run main.go
 ```
@@ -59,7 +70,7 @@ docker build -t shabe .
 
 2. Run the container:
 ```bash
-docker run -p 8080:8080 shabe
+docker run -p 8080:8080 -e OPENAI_API_KEY=your_api_key_here shabe
 ```
 
 ## Usage

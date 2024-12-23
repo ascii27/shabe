@@ -142,15 +142,12 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 func main() {
 	log.Println(" Starting Shabe chat server...")
 
-	cfg, err := config.LoadConfig("")
-	if err != nil {
-		log.Printf("Warning: Failed to load config: %v", err)
-	} else if cfg.OpenAIApiKey != "" {
-		openaiClient = openai.NewClient(cfg.OpenAIApiKey)
-		log.Println("OpenAI translation enabled")
-	} else {
-		log.Println("OpenAI translation disabled - no API key provided")
+	// Get OpenAI API key from environment variable
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		log.Fatal("OPENAI_API_KEY environment variable is required")
 	}
+	openaiClient = openai.NewClient(apiKey)
 
 	r := mux.NewRouter()
 
@@ -171,11 +168,11 @@ func main() {
 		fs.ServeHTTP(w, r)
 	}))
 
-	port := ":8080"
-	if cfg != nil && cfg.Server.Port != 0 {
-		port = fmt.Sprintf(":%d", cfg.Server.Port)
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
 	}
 
-	log.Printf("Server starting on http://localhost%s", port)
-	log.Fatal(http.ListenAndServe(port, r))
+	log.Printf("Server starting on http://localhost:%s", port)
+	log.Fatal(http.ListenAndServe(":"+port, r))
 }
