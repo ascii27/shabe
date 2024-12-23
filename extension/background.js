@@ -9,7 +9,7 @@ chrome.action.onClicked.addListener(() => {
       url: 'window.html',
       type: 'popup',
       width: 400,
-      height: 600,
+      height: 650,
       focused: true
     }, (window) => {
       windowId = window.id;

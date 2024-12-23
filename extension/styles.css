@@ -21,6 +21,7 @@ body {
     flex-direction: column;
     gap: 10px;
     margin-bottom: 10px;
+    min-height: 120px;
 }
 
 .room-controls {
@@ -74,6 +75,7 @@ button:disabled {
     border: 1px solid #ccc;
     border-radius: 4px;
     overflow: hidden;
+    min-height: 400px;
 }
 
 #messages {
