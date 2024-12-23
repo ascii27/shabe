@@ -2,6 +2,8 @@ let ws = null;
 let currentRoom = null;
 let selectedLanguage = 'en';
 let isUIVisible = true;
+let recognition = null;
+let isTranslating = false;
 
 // Function to extract room ID from Google Meet URL
 function extractMeetRoomId(url) {
@@ -50,14 +52,46 @@ function createTranslatorUI() {
     }
     // Save language preference
     chrome.storage.sync.set({ language: selectedLanguage });
+    
+    // Update speech recognition language if active
+    if (recognition) {
+      recognition.lang = getSpeechLangCode(selectedLanguage);
+      if (isTranslating) {
+        stopTranslation();
+        startTranslation();
+      }
+    }
   });
+  
+  const controls = document.createElement('div');
+  controls.className = 'shabe-controls';
+  
+  const startButton = document.createElement('button');
+  startButton.id = 'start-translation';
+  startButton.textContent = 'Start Translation';
+  startButton.addEventListener('click', startTranslation);
+  
+  const stopButton = document.createElement('button');
+  stopButton.id = 'stop-translation';
+  stopButton.textContent = 'Pause Translation';
+  stopButton.disabled = true;
+  stopButton.addEventListener('click', stopTranslation);
+  
+  controls.appendChild(startButton);
+  controls.appendChild(stopButton);
   
   const status = document.createElement('div');
   status.id = 'shabe-status';
   status.textContent = 'Disconnected';
   
+  const messages = document.createElement('div');
+  messages.id = 'shabe-messages';
+  messages.className = 'shabe-messages';
+  
   container.appendChild(languageSelect);
+  container.appendChild(controls);
   container.appendChild(status);
+  container.appendChild(messages);
   
   // Insert the UI into the document
   document.body.appendChild(container);
@@ -73,6 +107,101 @@ function createTranslatorUI() {
   
   // Connect to WebSocket
   connectToRoom();
+  
+  // Initialize speech recognition
+  setupSpeechRecognition();
+}
+
+function setupSpeechRecognition() {
+  if (!('webkitSpeechRecognition' in window)) {
+    console.error('Speech recognition not supported');
+    const startButton = document.getElementById('start-translation');
+    if (startButton) {
+      startButton.disabled = true;
+      startButton.title = 'Speech recognition not supported in this browser';
+    }
+    return;
+  }
+
+  recognition = new webkitSpeechRecognition();
+  recognition.continuous = true;
+  recognition.interimResults = true;
+  recognition.lang = getSpeechLangCode(selectedLanguage);
+
+  recognition.onstart = () => {
+    console.log('Speech recognition started');
+    const startButton = document.getElementById('start-translation');
+    const stopButton = document.getElementById('stop-translation');
+    if (startButton) startButton.disabled = true;
+    if (stopButton) stopButton.disabled = false;
+  };
+
+  recognition.onend = () => {
+    console.log('Speech recognition ended');
+    const startButton = document.getElementById('start-translation');
+    const stopButton = document.getElementById('stop-translation');
+    if (startButton) startButton.disabled = false;
+    if (stopButton) stopButton.disabled = true;
+    
+    // Restart if we're still translating
+    if (isTranslating) {
+      recognition.start();
+    }
+  };
+
+  recognition.onresult = (event) => {
+    const result = event.results[event.results.length - 1];
+    if (result.isFinal) {
+      const text = result[0].transcript.trim();
+      if (text) {
+        sendMessage(text);
+      }
+    }
+  };
+
+  recognition.onerror = (event) => {
+    console.error('Speech recognition error:', event.error);
+    isTranslating = false;
+    const startButton = document.getElementById('start-translation');
+    const stopButton = document.getElementById('stop-translation');
+    if (startButton) startButton.disabled = false;
+    if (stopButton) stopButton.disabled = true;
+  };
+}
+
+function startTranslation() {
+  if (!recognition) return;
+  
+  isTranslating = true;
+  try {
+    recognition.start();
+  } catch (error) {
+    console.error('Failed to start translation:', error);
+  }
+}
+
+function stopTranslation() {
+  if (!recognition) return;
+  
+  isTranslating = false;
+  try {
+    recognition.stop();
+  } catch (error) {
+    console.error('Failed to stop translation:', error);
+  }
+}
+
+function getSpeechLangCode(lang) {
+  const langMap = {
+    'en': 'en-US',
+    'ja': 'ja-JP',
+    'ko': 'ko-KR',
+    'zh': 'zh-CN',
+    'es': 'es-ES',
+    'fr': 'fr-FR',
+    'de': 'de-DE'
+  };
+  return langMap[lang] || 'en-US';
 }
 
 // Function to connect to WebSocket
@@ -120,7 +249,7 @@ function connectToRoom() {
     const message = JSON.parse(event.data);
     if (message.type === 'message') {
       console.log('Received message:', message.text);
-      // TODO: Display translated messages in the Meet UI
+      displayMessage(message.text, false);
     }
   };
   
@@ -143,6 +272,39 @@ function sendPreferences() {
   };
   
   ws.send(JSON.stringify(message));
+}
+
+// Function to display a message
+function displayMessage(text, isOwn = false) {
+  const messages = document.getElementById('shabe-messages');
+  if (!messages) return;
+  
+  const messageDiv = document.createElement('div');
+  messageDiv.className = `shabe-message ${isOwn ? 'own' : 'other'}`;
+  messageDiv.textContent = text;
+  
+  messages.appendChild(messageDiv);
+  messages.scrollTop = messages.scrollHeight;
+  
+  // Remove old messages if there are too many
+  while (messages.children.length > 50) {
+    messages.removeChild(messages.firstChild);
+  }
+}
+
+// Function to send a message
+function sendMessage(text) {
+  if (!ws || !text.trim()) return;
+  
+  const message = {
+    type: 'message',
+    text: text,
+    roomId: currentRoom,
+    language: selectedLanguage
+  };
+  
+  ws.send(JSON.stringify(message));
+  displayMessage(text, true);
 }
 
 // Function to toggle UI visibility

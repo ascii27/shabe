@@ -4,7 +4,7 @@ services:
   shabe:
     build:
       context: ..
-      dockerfile: ../Dockerfile
+      dockerfile: Dockerfile
     ports:
       - "8080:8080"
     environment:
