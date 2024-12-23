@@ -1,0 +1,122 @@
+body {
+    width: 400px;
+    height: 600px;
+    margin: 0;
+    padding: 16px;
+    font-family: Arial, sans-serif;
+    box-sizing: border-box;
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+#roomSelection {
+    margin-bottom: 16px;
+}
+
+#controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+#chat-container {
+    display: none;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+}
+
+#messages {
+    flex: 1;
+    border: 1px solid #ccc;
+    padding: 16px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background-color: #f8f9fa;
+}
+
+.message {
+    padding: 8px 12px;
+    border-radius: 16px;
+    max-width: 70%;
+    word-wrap: break-word;
+    font-size: 14px;
+}
+
+.message.own {
+    background-color: #007bff;
+    color: white;
+    align-self: flex-end;
+}
+
+.message.other {
+    background-color: white;
+    color: black;
+    align-self: flex-start;
+    border: 1px solid #dee2e6;
+}
+
+#input-container {
+    display: flex;
+    gap: 8px;
+    margin-top: auto;
+}
+
+#messageInput {
+    flex: 1;
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+button {
+    padding: 8px 16px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.2s;
+}
+
+button:hover {
+    background-color: #0056b3;
+}
+
+button:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+#status {
+    margin-bottom: 16px;
+    font-style: italic;
+    color: #666;
+    min-height: 20px;
+    font-size: 12px;
+}
+
+select {
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+#roomInput {
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 14px;
+    margin-right: 8px;
+}
