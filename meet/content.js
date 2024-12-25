@@ -15,71 +15,111 @@ function extractMeetRoomId(url) {
 
 // Function to clean up the name string
 function cleanupName(name) {
-  // Remove email address if present
-  name = name.replace(/\s*\([^)]*\)/, '');
-  
-  // Remove "Google Account:" prefix
-  name = name.replace(/^Google Account:\s*/, '');
-  
-  // Remove "Googleアカウント:" prefix (Japanese)
-  name = name.replace(/^Googleアカウント:\s*/, '');
-  
-  // Remove any remaining parentheses content
-  name = name.replace(/\s*\([^)]*\)/, '');
-  
-  // Remove (You) or （自分） suffix
-  name = name.replace(/\s*\((You|自分)\)/, '');
-  
-  return name.trim();
+    if (!name) return '';
+
+    // Remove email address if present
+    name = name.replace(/\s*\([^)]*@[^)]*\)/, '');
+    
+    // Remove Google Account prefix
+    name = name.replace(/^Google Account:\s*/, '');
+    name = name.replace(/^Googleアカウント:\s*/, '');
+    
+    // Remove various suffixes
+    name = name.replace(/\s*\((You|you|自分)\)/, '');
+    name = name.replace(/\s*\(host\)/i, '');
+    name = name.replace(/\s*\(会議のホスト\)/, '');
+    name = name.replace(/\s*\(管理者\)/, '');
+    name = name.replace(/\s*\(Organizer\)/i, '');
+    
+    // Remove any remaining parenthetical content
+    name = name.replace(/\s*\([^)]*\)/, '');
+    
+    // Remove various status indicators
+    name = name.replace(/\s*•.*$/, ''); // Remove everything after bullet point
+    name = name.replace(/\s*·.*$/, ''); // Remove everything after middle dot
+    name = name.replace(/^\s*·\s*/, ''); // Remove leading middle dot
+    name = name.replace(/\s*\b(Presenting|Speaking|Muted|Unmuted)\b.*$/i, '');
+    
+    // Clean up whitespace
+    name = name.trim();
+    
+    // Don't return special values
+    if (['domain_disabled', 'Anonymous', ''].includes(name)) {
+        return '';
+    }
+    
+    return name;
 }
 
 // Function to get user's name from Google Meet
 function getUserNameFromMeet() {
-  // Try to get name from the participant list
-  const participantList = document.querySelector('[aria-label*="participant"], [aria-label*="参加者"]');
-  if (participantList) {
-    const selfParticipant = participantList.querySelector('[data-self="true"], [data-is-self="true"], [data-participant-id*="you"], [data-participant-id*="自分"]');
-    if (selfParticipant) {
-      const nameSpan = selfParticipant.querySelector('span[jscontroller], div[jscontroller]');
-      if (nameSpan) {
-        const name = cleanupName(nameSpan.textContent);
-        if (name) return name;
-      }
+    // Try to get name from the meeting controls
+    const meetingControls = document.querySelector('[data-meeting-title]');
+    if (meetingControls) {
+        const nameButton = meetingControls.querySelector('[role="button"]:not([aria-label*="camera"]):not([aria-label*="micro"]):not([aria-label*="chat"]):not([aria-label*="present"]):not([aria-label*="more"])');
+        if (nameButton) {
+            const name = cleanupName(nameButton.textContent);
+            if (name) return name;
+        }
     }
-  }
 
-  // Try to get name from the meeting bottom bar
-  const bottomBar = document.querySelector('[data-self-name], [jscontroller][role="button"]:not([aria-label*="camera"]):not([aria-label*="micro"]):not([aria-label*="chat"]):not([aria-label*="present"])');
-  if (bottomBar) {
-    const name = cleanupName(bottomBar.textContent);
-    if (name) return name;
-  }
+    // Try to get name from the participant panel
+    const participantPanel = document.querySelector('[role="dialog"][aria-label*="participant"], [role="dialog"][aria-label*="参加者"]');
+    if (participantPanel) {
+        const selfItem = participantPanel.querySelector('[data-participant-id*="me"], [data-participant-id*="you"], [data-self="true"]');
+        if (selfItem) {
+            const nameElement = selfItem.querySelector('[role="button"]');
+            if (nameElement) {
+                const name = cleanupName(nameElement.textContent);
+                if (name) return name;
+            }
+        }
+    }
 
-  // Try to get name from the chat interface
-  const chatSelfName = document.querySelector('[data-message-text] [data-self-name], .self-message [data-sender-name]');
-  if (chatSelfName) {
-    const name = cleanupName(chatSelfName.textContent);
-    if (name) return name;
-  }
+    // Try to get name from the bottom bar
+    const bottomBar = document.querySelector('[data-self-name], [aria-label*="meeting participant"]');
+    if (bottomBar) {
+        const name = cleanupName(bottomBar.getAttribute('aria-label') || bottomBar.textContent);
+        if (name) return name;
+    }
 
-  // Try to get from Google account info
-  const accountInfo = document.querySelector('[aria-label*="Google Account"], [aria-label*="Googleアカウント"]');
-  if (accountInfo) {
-    const name = cleanupName(accountInfo.getAttribute('aria-label'));
-    if (name) return name;
-  }
+    // Try to get name from the chat interface
+    const chatBox = document.querySelector('[aria-label*="chat"], [aria-label*="チャット"]');
+    if (chatBox) {
+        const selfMessages = chatBox.querySelectorAll('[data-sender-name], [data-message-text]');
+        for (const message of selfMessages) {
+            if (message.hasAttribute('data-self-name') || message.querySelector('[data-self-name]')) {
+                const name = cleanupName(message.textContent);
+                if (name) return name;
+            }
+        }
+    }
 
-  // If all attempts fail, try to get from the Meet UI elements
-  const possibleNameElements = [
-    ...document.querySelectorAll('[data-self-name], [data-participant-id*="you"], [jsname*="name"][role="button"]')
-  ];
+    // Try to get name from the Google Account menu
+    const accountButton = document.querySelector('[aria-label*="Google Account"], [aria-label*="Googleアカウント"]');
+    if (accountButton) {
+        const label = accountButton.getAttribute('aria-label') || '';
+        const name = cleanupName(label);
+        if (name) return name;
+    }
 
-  for (const element of possibleNameElements) {
-    const name = cleanupName(element.textContent);
-    if (name) return name;
-  }
+    // Try to get name from any element with self-name attribute
+    const selfNameElements = document.querySelectorAll('[data-self-name], [data-participant-id*="me"], [data-participant-id*="you"]');
+    for (const element of selfNameElements) {
+        const name = cleanupName(element.textContent);
+        if (name) return name;
+    }
 
-  return 'Anonymous';
+    // If all attempts fail, look for any button that might contain the name
+    const possibleNameButtons = document.querySelectorAll('[role="button"]:not([aria-label*="camera"]):not([aria-label*="micro"]):not([aria-label*="chat"]):not([aria-label*="present"]):not([aria-label*="more"]):not([aria-label*="leave"]):not([aria-label*="menu"])');
+    for (const button of possibleNameButtons) {
+        if (!button.querySelector('*')) { // Only check buttons without child elements
+            const name = cleanupName(button.textContent);
+            if (name) return name;
+        }
+    }
+
+    return 'Anonymous';
 }
 
 // Function to observe name changes in Meet
