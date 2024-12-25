@@ -4,7 +4,8 @@ let selectedLanguage = 'en';
 let isUIVisible = true;
 let recognition = null;
 let isTranslating = false;
-let userName = '';
+let userName = 'Anonymous';
+let lastUrl = window.location.href;
 
 // Function to extract room ID from Google Meet URL
 function extractMeetRoomId(url) {
@@ -13,201 +14,31 @@ function extractMeetRoomId(url) {
   return match ? match[1] : null;
 }
 
-// Function to clean up the name string
-function cleanupName(name) {
-    if (!name) return '';
-
-    // Remove email address if present
-    name = name.replace(/\s*\([^)]*@[^)]*\)/, '');
-    
-    // Remove Google Account prefix
-    name = name.replace(/^Google Account:\s*/, '');
-    name = name.replace(/^Googleアカウント:\s*/, '');
-    
-    // Remove various suffixes
-    name = name.replace(/\s*\((You|you|自分)\)/, '');
-    name = name.replace(/\s*\(host\)/i, '');
-    name = name.replace(/\s*\(会議のホスト\)/, '');
-    name = name.replace(/\s*\(管理者\)/, '');
-    name = name.replace(/\s*\(Organizer\)/i, '');
-    
-    // Remove any remaining parenthetical content
-    name = name.replace(/\s*\([^)]*\)/, '');
-    
-    // Remove various status indicators
-    name = name.replace(/\s*•.*$/, ''); // Remove everything after bullet point
-    name = name.replace(/\s*·.*$/, ''); // Remove everything after middle dot
-    name = name.replace(/^\s*·\s*/, ''); // Remove leading middle dot
-    name = name.replace(/\s*\b(Presenting|Speaking|Muted|Unmuted)\b.*$/i, '');
-    
-    // Clean up whitespace
-    name = name.trim();
-    
-    // Don't return special values
-    if (['domain_disabled', 'Anonymous', ''].includes(name)) {
-        return '';
-    }
-    
-    return name;
-}
-
-// Function to get user's name from Google Meet
-function getUserNameFromMeet() {
-    // Try to get name from the meeting controls
-    const meetingControls = document.querySelector('[data-meeting-title]');
-    if (meetingControls) {
-        const nameButton = meetingControls.querySelector('[role="button"]:not([aria-label*="camera"]):not([aria-label*="micro"]):not([aria-label*="chat"]):not([aria-label*="present"]):not([aria-label*="more"])');
-        if (nameButton) {
-            const name = cleanupName(nameButton.textContent);
-            if (name) return name;
-        }
-    }
-
-    // Try to get name from the participant panel
-    const participantPanel = document.querySelector('[role="dialog"][aria-label*="participant"], [role="dialog"][aria-label*="参加者"]');
-    if (participantPanel) {
-        const selfItem = participantPanel.querySelector('[data-participant-id*="me"], [data-participant-id*="you"], [data-self="true"]');
-        if (selfItem) {
-            const nameElement = selfItem.querySelector('[role="button"]');
-            if (nameElement) {
-                const name = cleanupName(nameElement.textContent);
-                if (name) return name;
-            }
-        }
-    }
-
-    // Try to get name from the bottom bar
-    const bottomBar = document.querySelector('[data-self-name], [aria-label*="meeting participant"]');
-    if (bottomBar) {
-        const name = cleanupName(bottomBar.getAttribute('aria-label') || bottomBar.textContent);
-        if (name) return name;
-    }
-
-    // Try to get name from the chat interface
-    const chatBox = document.querySelector('[aria-label*="chat"], [aria-label*="チャット"]');
-    if (chatBox) {
-        const selfMessages = chatBox.querySelectorAll('[data-sender-name], [data-message-text]');
-        for (const message of selfMessages) {
-            if (message.hasAttribute('data-self-name') || message.querySelector('[data-self-name]')) {
-                const name = cleanupName(message.textContent);
-                if (name) return name;
-            }
-        }
-    }
-
-    // Try to get name from the Google Account menu
-    const accountButton = document.querySelector('[aria-label*="Google Account"], [aria-label*="Googleアカウント"]');
-    if (accountButton) {
-        const label = accountButton.getAttribute('aria-label') || '';
-        const name = cleanupName(label);
-        if (name) return name;
-    }
-
-    // Try to get name from any element with self-name attribute
-    const selfNameElements = document.querySelectorAll('[data-self-name], [data-participant-id*="me"], [data-participant-id*="you"]');
-    for (const element of selfNameElements) {
-        const name = cleanupName(element.textContent);
-        if (name) return name;
-    }
-
-    // If all attempts fail, look for any button that might contain the name
-    const possibleNameButtons = document.querySelectorAll('[role="button"]:not([aria-label*="camera"]):not([aria-label*="micro"]):not([aria-label*="chat"]):not([aria-label*="present"]):not([aria-label*="more"]):not([aria-label*="leave"]):not([aria-label*="menu"])');
-    for (const button of possibleNameButtons) {
-        if (!button.querySelector('*')) { // Only check buttons without child elements
-            const name = cleanupName(button.textContent);
-            if (name) return name;
-        }
-    }
-
-    return 'Anonymous';
-}
-
-// Function to observe name changes in Meet
-function observeNameChanges() {
-  const config = { 
-    childList: true, 
-    subtree: true, 
-    characterData: true,
-    attributes: true,
-    attributeFilter: ['data-self-name', 'aria-label']
-  };
-
-  const callback = (mutationsList, observer) => {
-    for (const mutation of mutationsList) {
-      // Only check for relevant mutations
-      if (mutation.type === 'childList' && 
-          (mutation.target.hasAttribute('data-self-name') || 
-           mutation.target.hasAttribute('data-participant-id'))) {
-        updateName();
-      } else if (mutation.type === 'attributes' && 
-                (mutation.attributeName === 'data-self-name' || 
-                 mutation.attributeName === 'aria-label')) {
-        updateName();
-      }
-    }
-  };
-
-  const updateName = () => {
-    const newName = getUserNameFromMeet();
-    if (newName && newName !== 'Anonymous' && newName !== userName) {
-      userName = newName;
-      const nameDisplay = document.getElementById('shabe-name');
-      if (nameDisplay) {
-        nameDisplay.textContent = userName;
-      }
-      // Send updated name to the server
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'preferences',
-          language: selectedLanguage,
-          name: userName
-        }));
-      }
-    }
-  };
-
-  const observer = new MutationObserver(callback);
-  observer.observe(document.body, config);
-
-  // Also try to get the name periodically for the first minute
-  let attempts = 0;
-  const interval = setInterval(() => {
-    updateName();
-    attempts++;
-    if (attempts >= 12 || (userName && userName !== 'Anonymous')) {
-      clearInterval(interval);
-    }
-  }, 5000);
-}
-
 // Function to create and inject the translator UI
 function createTranslatorUI() {
-  console.log('Creating translator UI...');
-  
-  // Get user name from Meet
-  userName = getUserNameFromMeet();
-  console.log('Detected user name:', userName);
-  
-  // Remove existing UI if present
-  const existingUI = document.querySelector('.shabe-translator');
-  if (existingUI) {
-    existingUI.remove();
-  }
-  
   const container = document.createElement('div');
   container.className = 'shabe-translator';
-  container.style.display = isUIVisible ? 'flex' : 'none';
   
-  const header = document.createElement('div');
-  header.className = 'shabe-header';
+  // Create name input
+  const nameContainer = document.createElement('div');
+  nameContainer.className = 'shabe-name-container';
   
-  const nameDisplay = document.createElement('div');
-  nameDisplay.id = 'shabe-name';
-  nameDisplay.textContent = userName;
-  nameDisplay.title = 'Your Google Meet display name';
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.placeholder = 'Enter your name';
+  nameInput.value = userName;
+  nameInput.className = 'shabe-name-input';
+  nameInput.addEventListener('change', (e) => {
+    userName = e.target.value.trim() || 'Anonymous';
+    localStorage.setItem('userName', userName);
+    sendPreferences();
+  });
   
+  nameContainer.appendChild(nameInput);
+  
+  // Create language selector
   const languageSelect = document.createElement('select');
-  languageSelect.id = 'shabe-language';
+  languageSelect.className = 'shabe-language-select';
   const languages = {
     'en': 'English',
     'ja': '日本語',
@@ -222,18 +53,15 @@ function createTranslatorUI() {
     const option = document.createElement('option');
     option.value = code;
     option.textContent = name;
+    if (code === selectedLanguage) {
+      option.selected = true;
+    }
     languageSelect.appendChild(option);
   }
   
   languageSelect.addEventListener('change', (e) => {
     selectedLanguage = e.target.value;
-    if (ws) {
-      sendPreferences();
-    }
-    // Save language preference
-    chrome.storage.sync.set({ language: selectedLanguage });
-    
-    // Update speech recognition language if active
+    localStorage.setItem('language', selectedLanguage);
     if (recognition) {
       recognition.lang = getSpeechLangCode(selectedLanguage);
       if (isTranslating) {
@@ -241,61 +69,63 @@ function createTranslatorUI() {
         startTranslation();
       }
     }
+    sendPreferences();
   });
   
-  header.appendChild(nameDisplay);
-  header.appendChild(languageSelect);
-  
+  // Create translation controls
   const controls = document.createElement('div');
   controls.className = 'shabe-controls';
   
   const startButton = document.createElement('button');
-  startButton.id = 'start-translation';
   startButton.textContent = 'Start Translation';
+  startButton.id = 'start-translation';
   startButton.addEventListener('click', startTranslation);
   
   const stopButton = document.createElement('button');
+  stopButton.textContent = 'Stop Translation';
   stopButton.id = 'stop-translation';
-  stopButton.textContent = 'Pause Translation';
   stopButton.disabled = true;
   stopButton.addEventListener('click', stopTranslation);
   
-  controls.appendChild(startButton);
-  controls.appendChild(stopButton);
-  
+  // Create status display
   const status = document.createElement('div');
-  status.id = 'shabe-status';
-  status.textContent = 'Disconnected';
+  status.id = 'status';
+  status.className = 'shabe-status';
+  status.textContent = 'Not connected';
   
+  // Create messages container
   const messages = document.createElement('div');
-  messages.id = 'shabe-messages';
+  messages.id = 'messages';
   messages.className = 'shabe-messages';
   
-  container.appendChild(header);
+  // Assemble the UI
+  controls.appendChild(startButton);
+  controls.appendChild(stopButton);
+  container.appendChild(nameContainer);
+  container.appendChild(languageSelect);
   container.appendChild(controls);
   container.appendChild(status);
   container.appendChild(messages);
   
-  // Insert the UI into the document
+  // Add to page
   document.body.appendChild(container);
-  console.log('Translator UI created and inserted');
   
-  // Load saved language preference
-  chrome.storage.sync.get(['language'], (result) => {
-    if (result.language) {
-      languageSelect.value = result.language;
-      selectedLanguage = result.language;
-    }
-  });
+  // Load saved preferences
+  const savedName = localStorage.getItem('userName');
+  const savedLanguage = localStorage.getItem('language');
   
-  // Connect to WebSocket
+  if (savedName) {
+    userName = savedName;
+    nameInput.value = userName;
+  }
+  
+  if (savedLanguage) {
+    selectedLanguage = savedLanguage;
+    languageSelect.value = selectedLanguage;
+  }
+  
+  // Connect to room if valid room ID exists
   connectToRoom();
-  
-  // Initialize speech recognition
-  setupSpeechRecognition();
-  
-  // Set up observer to detect name changes
-  observeNameChanges();
 }
 
 function setupSpeechRecognition() {
@@ -316,20 +146,25 @@ function setupSpeechRecognition() {
 
   recognition.onstart = () => {
     console.log('Speech recognition started');
-    const startButton = document.getElementById('start-translation');
-    const stopButton = document.getElementById('stop-translation');
-    if (startButton) startButton.disabled = true;
-    if (stopButton) stopButton.disabled = false;
+    document.getElementById('start-translation').disabled = true;
+    document.getElementById('stop-translation').disabled = false;
+    const status = document.getElementById('status');
+    if (status) {
+      status.textContent = 'Listening...';
+    }
   };
 
   recognition.onend = () => {
     console.log('Speech recognition ended');
-    const startButton = document.getElementById('start-translation');
-    const stopButton = document.getElementById('stop-translation');
-    if (startButton) startButton.disabled = false;
-    if (stopButton) stopButton.disabled = true;
+    document.getElementById('start-translation').disabled = false;
+    document.getElementById('stop-translation').disabled = true;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const status = document.getElementById('status');
+      if (status) {
+        status.textContent = 'Connected';
+      }
+    }
     
-    // Restart if we're still translating
     if (isTranslating) {
       recognition.start();
     }
@@ -339,7 +174,7 @@ function setupSpeechRecognition() {
     const result = event.results[event.results.length - 1];
     if (result.isFinal) {
       const text = result[0].transcript.trim();
-      if (text) {
+      if (text && ws && ws.readyState === WebSocket.OPEN) {
         sendMessage(text);
       }
     }
@@ -348,15 +183,17 @@ function setupSpeechRecognition() {
   recognition.onerror = (event) => {
     console.error('Speech recognition error:', event.error);
     isTranslating = false;
-    const startButton = document.getElementById('start-translation');
-    const stopButton = document.getElementById('stop-translation');
-    if (startButton) startButton.disabled = false;
-    if (stopButton) stopButton.disabled = true;
+    document.getElementById('start-translation').disabled = false;
+    document.getElementById('stop-translation').disabled = true;
+    const status = document.getElementById('status');
+    if (status) {
+      status.textContent = 'Error: ' + event.error;
+    }
   };
 }
 
 function startTranslation() {
-  if (!recognition) return;
+  if (!recognition || !ws || ws.readyState !== WebSocket.OPEN) return;
   
   isTranslating = true;
   try {
@@ -392,26 +229,29 @@ function getSpeechLangCode(lang) {
 
 // Function to connect to WebSocket
 function connectToRoom() {
-  console.log('Connecting to room...');
   const roomId = extractMeetRoomId(window.location.href);
   if (!roomId) {
-    console.log('No room ID found');
+    console.log('No valid room ID found in URL');
+    const status = document.getElementById('status');
+    if (status) {
+      status.textContent = 'Not in a valid meeting room';
+    }
     return;
   }
-  
+
   if (ws) {
     ws.close();
   }
-  
+
   currentRoom = roomId;
-  const wsUrl = `ws://localhost:8080/ws?roomId=${currentRoom}`;
-  console.log('Connecting to WebSocket:', wsUrl);
+  const wsUrl = 'ws://localhost:8080/ws?roomId=' + roomId;
   
+  console.log('Connecting to WebSocket:', wsUrl);
   ws = new WebSocket(wsUrl);
   
   ws.onopen = () => {
     console.log('WebSocket connected');
-    const status = document.getElementById('shabe-status');
+    const status = document.getElementById('status');
     if (status) {
       status.textContent = 'Connected';
     }
@@ -420,28 +260,29 @@ function connectToRoom() {
   
   ws.onclose = () => {
     console.log('WebSocket disconnected');
-    const status = document.getElementById('shabe-status');
+    const status = document.getElementById('status');
     if (status) {
       status.textContent = 'Disconnected';
     }
-    setTimeout(() => {
-      if (currentRoom) {
-        connectToRoom();
-      }
-    }, 2000);
+    if (isTranslating) {
+      stopTranslation();
+    }
+    // Try to reconnect after a delay if we're still in a valid room
+    if (extractMeetRoomId(window.location.href) === currentRoom) {
+      setTimeout(connectToRoom, 5000);
+    }
   };
   
   ws.onmessage = (event) => {
     const message = JSON.parse(event.data);
     if (message.type === 'message') {
-      console.log('Received message:', message.text);
       displayMessage(message.text, false, message.name);
     }
   };
   
   ws.onerror = (error) => {
     console.error('WebSocket error:', error);
-    const status = document.getElementById('shabe-status');
+    const status = document.getElementById('status');
     if (status) {
       status.textContent = 'Connection error';
     }
@@ -450,30 +291,29 @@ function connectToRoom() {
 
 // Function to send preferences to the server
 function sendPreferences() {
-  if (!ws) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
   
-  const message = {
+  ws.send(JSON.stringify({
     type: 'preferences',
-    language: selectedLanguage
-  };
-  
-  ws.send(JSON.stringify(message));
+    language: selectedLanguage,
+    name: userName
+  }));
 }
 
 // Function to display a message
 function displayMessage(text, isOwn = false, senderName = '') {
-  const messages = document.getElementById('shabe-messages');
+  const messages = document.getElementById('messages');
   if (!messages) return;
   
   const messageDiv = document.createElement('div');
-  messageDiv.className = `shabe-message ${isOwn ? 'own' : 'other'}`;
+  messageDiv.className = `message ${isOwn ? 'own' : ''}`;
   
   const nameSpan = document.createElement('span');
-  nameSpan.className = 'shabe-message-name';
+  nameSpan.className = 'message-name';
   nameSpan.textContent = senderName || (isOwn ? userName : 'Anonymous');
   
   const textSpan = document.createElement('span');
-  textSpan.className = 'shabe-message-text';
+  textSpan.className = 'message-text';
   textSpan.textContent = text;
   
   messageDiv.appendChild(nameSpan);
@@ -490,12 +330,11 @@ function displayMessage(text, isOwn = false, senderName = '') {
 
 // Function to send a message
 function sendMessage(text) {
-  if (!ws || !text.trim()) return;
+  if (!ws || ws.readyState !== WebSocket.OPEN || !text.trim()) return;
   
   const message = {
     type: 'message',
     text: text,
-    roomId: currentRoom,
     language: selectedLanguage,
     name: userName
   };
@@ -523,21 +362,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Received message:', message);
   if (message.type === 'TOGGLE_UI') {
     toggleUI();
+    sendResponse({ success: true });
   }
-  return true;
+  return true; // Keep the message channel open for the async response
 });
 
-// Listen for URL changes (for when user switches rooms)
-let lastUrl = window.location.href;
-new MutationObserver(() => {
+// Function to initialize the UI when the page is ready
+function initializeUI() {
+  // Check if we're already initialized
+  if (document.querySelector('.shabe-translator')) {
+    return;
+  }
+
+  // Create and inject the UI
+  createTranslatorUI();
+  
+  // Set up speech recognition
+  setupSpeechRecognition();
+}
+
+// Initialize when the page is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(initializeUI, 1000);
+  });
+} else {
+  setTimeout(initializeUI, 1000);
+}
+
+// Watch for dynamic navigation in Meet
+const observer = new MutationObserver(() => {
   const url = window.location.href;
   if (url !== lastUrl) {
     console.log('URL changed:', url);
     lastUrl = url;
-    connectToRoom();
+    setTimeout(connectToRoom, 500);
   }
-}).observe(document, { subtree: true, childList: true });
+});
 
-// Initialize when the page is ready
-console.log('Content script loaded, creating UI...');
-createTranslatorUI();
+observer.observe(document, { subtree: true, childList: true });
