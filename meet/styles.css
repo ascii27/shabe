@@ -15,6 +15,25 @@
   max-width: 400px;
 }
 
+.shabe-header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+#shabe-name {
+  flex: 1;
+  padding: 8px;
+  font-size: 14px;
+  color: #3c4043;
+  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  background: #f1f3f4;
+  border-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 #shabe-language {
   padding: 8px;
   border: 1px solid #dadce0;
@@ -25,6 +44,7 @@
   font-family: 'Google Sans', Roboto, Arial, sans-serif;
   cursor: pointer;
   outline: none;
+  min-width: 100px;
 }
 
 #shabe-language:hover {
@@ -136,4 +156,20 @@
   background: #e8f0fe;
   border-color: #1a73e8;
   margin-left: auto;
+}
+
+.shabe-message-name {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: #5f6368;
+  margin-bottom: 4px;
+}
+
+.shabe-message.own .shabe-message-name {
+  color: #1a73e8;
+}
+
+.shabe-message-text {
+  display: block;
 }

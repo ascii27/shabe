@@ -1,0 +1,257 @@
+body {
+    margin: 0;
+    padding: 20px;
+    font-family: 'Google Sans', Roboto, Arial, sans-serif;
+    background: #f8f9fa;
+    color: #3c4043;
+}
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    padding: 24px;
+}
+
+.join-room {
+    text-align: center;
+    padding: 40px 20px;
+}
+
+.join-room h1 {
+    margin: 0 0 24px;
+    color: #1a73e8;
+    font-weight: 500;
+    font-size: 24px;
+}
+
+.input-group {
+    display: flex;
+    gap: 8px;
+    max-width: 400px;
+    margin: 0 auto 16px;
+}
+
+.input-group input {
+    flex: 1;
+}
+
+.hint {
+    color: #5f6368;
+    font-size: 14px;
+    margin: 0;
+}
+
+.chat-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #dadce0;
+}
+
+.room-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+}
+
+.room-label {
+    color: #5f6368;
+}
+
+#current-room-id {
+    color: #1a73e8;
+    font-weight: 500;
+}
+
+.user-controls {
+    display: flex;
+    gap: 12px;
+}
+
+input[type="text"] {
+    padding: 8px 12px;
+    border: 1px solid #dadce0;
+    border-radius: 4px;
+    font-size: 14px;
+    outline: none;
+    transition: all 0.2s;
+}
+
+input[type="text"]:hover {
+    border-color: #1a73e8;
+}
+
+input[type="text"]:focus {
+    border-color: #1a73e8;
+    box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+}
+
+select {
+    min-width: 120px;
+    padding: 8px 12px;
+    border: 1px solid #dadce0;
+    border-radius: 4px;
+    font-size: 14px;
+    outline: none;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: white;
+    color: #3c4043;
+}
+
+select:hover {
+    border-color: #1a73e8;
+}
+
+select:focus {
+    border-color: #1a73e8;
+    box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
+}
+
+.controls {
+    display: flex;
+    gap: 8px;
+}
+
+button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-family: 'Google Sans', Roboto, Arial, sans-serif;
+}
+
+#join-button, #start-translation {
+    background: #1a73e8;
+    color: white;
+}
+
+#join-button:hover, #start-translation:hover {
+    background: #1557b0;
+}
+
+#stop-translation {
+    background: #ea4335;
+    color: white;
+}
+
+#stop-translation:hover {
+    background: #d93025;
+}
+
+button:disabled {
+    background: #dadce0 !important;
+    cursor: not-allowed;
+}
+
+#status {
+    text-align: center;
+    padding: 8px;
+    background: #f1f3f4;
+    border-radius: 4px;
+    font-size: 14px;
+    color: #5f6368;
+}
+
+#messages {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    height: 400px;
+    overflow-y: auto;
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 4px;
+    border: 1px solid #dadce0;
+}
+
+#messages::-webkit-scrollbar {
+    width: 8px;
+}
+
+#messages::-webkit-scrollbar-track {
+    background: #f1f3f4;
+    border-radius: 4px;
+}
+
+#messages::-webkit-scrollbar-thumb {
+    background: #dadce0;
+    border-radius: 4px;
+}
+
+#messages::-webkit-scrollbar-thumb:hover {
+    background: #80868b;
+}
+
+.message {
+    padding: 8px 12px;
+    border-radius: 4px;
+    max-width: 70%;
+    word-wrap: break-word;
+    background: white;
+    border: 1px solid #dadce0;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.message.own {
+    margin-left: auto;
+    background: #e8f0fe;
+    border-color: #1a73e8;
+}
+
+.message-name {
+    display: block;
+    font-size: 12px;
+    font-weight: 500;
+    color: #5f6368;
+    margin-bottom: 4px;
+}
+
+.message.own .message-name {
+    color: #1a73e8;
+}
+
+.message-text {
+    display: block;
+    color: #3c4043;
+}
+
+.room-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    padding-top: 16px;
+    border-top: 1px solid #dadce0;
+}
+
+#leave-room {
+    background: #ea4335;
+    color: white;
+}
+
+#leave-room:hover {
+    background: #d93025;
+}
+
+#copy-room-id {
+    background: #f1f3f4;
+    color: #3c4043;
+}
+
+#copy-room-id:hover {
+    background: #e8eaed;
+}

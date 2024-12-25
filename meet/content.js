@@ -4,6 +4,7 @@ let selectedLanguage = 'en';
 let isUIVisible = true;
 let recognition = null;
 let isTranslating = false;
+let userName = '';
 
 // Function to extract room ID from Google Meet URL
 function extractMeetRoomId(url) {
@@ -12,9 +13,140 @@ function extractMeetRoomId(url) {
   return match ? match[1] : null;
 }
 
+// Function to clean up the name string
+function cleanupName(name) {
+  // Remove email address if present
+  name = name.replace(/\s*\([^)]*\)/, '');
+  
+  // Remove "Google Account:" prefix
+  name = name.replace(/^Google Account:\s*/, '');
+  
+  // Remove "Googleアカウント:" prefix (Japanese)
+  name = name.replace(/^Googleアカウント:\s*/, '');
+  
+  // Remove any remaining parentheses content
+  name = name.replace(/\s*\([^)]*\)/, '');
+  
+  // Remove (You) or （自分） suffix
+  name = name.replace(/\s*\((You|自分)\)/, '');
+  
+  return name.trim();
+}
+
+// Function to get user's name from Google Meet
+function getUserNameFromMeet() {
+  // Try to get name from the participant list
+  const participantList = document.querySelector('[aria-label*="participant"], [aria-label*="参加者"]');
+  if (participantList) {
+    const selfParticipant = participantList.querySelector('[data-self="true"], [data-is-self="true"], [data-participant-id*="you"], [data-participant-id*="自分"]');
+    if (selfParticipant) {
+      const nameSpan = selfParticipant.querySelector('span[jscontroller], div[jscontroller]');
+      if (nameSpan) {
+        const name = cleanupName(nameSpan.textContent);
+        if (name) return name;
+      }
+    }
+  }
+
+  // Try to get name from the meeting bottom bar
+  const bottomBar = document.querySelector('[data-self-name], [jscontroller][role="button"]:not([aria-label*="camera"]):not([aria-label*="micro"]):not([aria-label*="chat"]):not([aria-label*="present"])');
+  if (bottomBar) {
+    const name = cleanupName(bottomBar.textContent);
+    if (name) return name;
+  }
+
+  // Try to get name from the chat interface
+  const chatSelfName = document.querySelector('[data-message-text] [data-self-name], .self-message [data-sender-name]');
+  if (chatSelfName) {
+    const name = cleanupName(chatSelfName.textContent);
+    if (name) return name;
+  }
+
+  // Try to get from Google account info
+  const accountInfo = document.querySelector('[aria-label*="Google Account"], [aria-label*="Googleアカウント"]');
+  if (accountInfo) {
+    const name = cleanupName(accountInfo.getAttribute('aria-label'));
+    if (name) return name;
+  }
+
+  // If all attempts fail, try to get from the Meet UI elements
+  const possibleNameElements = [
+    ...document.querySelectorAll('[data-self-name], [data-participant-id*="you"], [jsname*="name"][role="button"]')
+  ];
+
+  for (const element of possibleNameElements) {
+    const name = cleanupName(element.textContent);
+    if (name) return name;
+  }
+
+  return 'Anonymous';
+}
+
+// Function to observe name changes in Meet
+function observeNameChanges() {
+  const config = { 
+    childList: true, 
+    subtree: true, 
+    characterData: true,
+    attributes: true,
+    attributeFilter: ['data-self-name', 'aria-label']
+  };
+
+  const callback = (mutationsList, observer) => {
+    for (const mutation of mutationsList) {
+      // Only check for relevant mutations
+      if (mutation.type === 'childList' && 
+          (mutation.target.hasAttribute('data-self-name') || 
+           mutation.target.hasAttribute('data-participant-id'))) {
+        updateName();
+      } else if (mutation.type === 'attributes' && 
+                (mutation.attributeName === 'data-self-name' || 
+                 mutation.attributeName === 'aria-label')) {
+        updateName();
+      }
+    }
+  };
+
+  const updateName = () => {
+    const newName = getUserNameFromMeet();
+    if (newName && newName !== 'Anonymous' && newName !== userName) {
+      userName = newName;
+      const nameDisplay = document.getElementById('shabe-name');
+      if (nameDisplay) {
+        nameDisplay.textContent = userName;
+      }
+      // Send updated name to the server
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'preferences',
+          language: selectedLanguage,
+          name: userName
+        }));
+      }
+    }
+  };
+
+  const observer = new MutationObserver(callback);
+  observer.observe(document.body, config);
+
+  // Also try to get the name periodically for the first minute
+  let attempts = 0;
+  const interval = setInterval(() => {
+    updateName();
+    attempts++;
+    if (attempts >= 12 || (userName && userName !== 'Anonymous')) {
+      clearInterval(interval);
+    }
+  }, 5000);
+}
+
 // Function to create and inject the translator UI
 function createTranslatorUI() {
   console.log('Creating translator UI...');
+  
+  // Get user name from Meet
+  userName = getUserNameFromMeet();
+  console.log('Detected user name:', userName);
   
   // Remove existing UI if present
   const existingUI = document.querySelector('.shabe-translator');
@@ -25,6 +157,14 @@ function createTranslatorUI() {
   const container = document.createElement('div');
   container.className = 'shabe-translator';
   container.style.display = isUIVisible ? 'flex' : 'none';
+  
+  const header = document.createElement('div');
+  header.className = 'shabe-header';
+  
+  const nameDisplay = document.createElement('div');
+  nameDisplay.id = 'shabe-name';
+  nameDisplay.textContent = userName;
+  nameDisplay.title = 'Your Google Meet display name';
   
   const languageSelect = document.createElement('select');
   languageSelect.id = 'shabe-language';
@@ -63,6 +203,9 @@ function createTranslatorUI() {
     }
   });
   
+  header.appendChild(nameDisplay);
+  header.appendChild(languageSelect);
+  
   const controls = document.createElement('div');
   controls.className = 'shabe-controls';
   
@@ -88,7 +231,7 @@ function createTranslatorUI() {
   messages.id = 'shabe-messages';
   messages.className = 'shabe-messages';
   
-  container.appendChild(languageSelect);
+  container.appendChild(header);
   container.appendChild(controls);
   container.appendChild(status);
   container.appendChild(messages);
@@ -110,6 +253,9 @@ function createTranslatorUI() {
   
   // Initialize speech recognition
   setupSpeechRecognition();
+  
+  // Set up observer to detect name changes
+  observeNameChanges();
 }
 
 function setupSpeechRecognition() {
@@ -249,7 +395,7 @@ function connectToRoom() {
     const message = JSON.parse(event.data);
     if (message.type === 'message') {
       console.log('Received message:', message.text);
-      displayMessage(message.text, false);
+      displayMessage(message.text, false, message.name);
     }
   };
   
@@ -275,13 +421,23 @@ function sendPreferences() {
 }
 
 // Function to display a message
-function displayMessage(text, isOwn = false) {
+function displayMessage(text, isOwn = false, senderName = '') {
   const messages = document.getElementById('shabe-messages');
   if (!messages) return;
   
   const messageDiv = document.createElement('div');
   messageDiv.className = `shabe-message ${isOwn ? 'own' : 'other'}`;
-  messageDiv.textContent = text;
+  
+  const nameSpan = document.createElement('span');
+  nameSpan.className = 'shabe-message-name';
+  nameSpan.textContent = senderName || (isOwn ? userName : 'Anonymous');
+  
+  const textSpan = document.createElement('span');
+  textSpan.className = 'shabe-message-text';
+  textSpan.textContent = text;
+  
+  messageDiv.appendChild(nameSpan);
+  messageDiv.appendChild(textSpan);
   
   messages.appendChild(messageDiv);
   messages.scrollTop = messages.scrollHeight;
@@ -300,11 +456,12 @@ function sendMessage(text) {
     type: 'message',
     text: text,
     roomId: currentRoom,
-    language: selectedLanguage
+    language: selectedLanguage,
+    name: userName
   };
   
   ws.send(JSON.stringify(message));
-  displayMessage(text, true);
+  displayMessage(text, true, userName);
 }
 
 // Function to toggle UI visibility

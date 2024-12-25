@@ -1,20 +1,18 @@
 package chat
 
 import (
-	"encoding/json"
+	"github.com/gorilla/websocket"
 	"log"
 	"sync"
-
-	"github.com/gorilla/websocket"
 )
 
 // Room represents a chat room with its participants
 type Room struct {
 	ID         string
-	clients    map[*websocket.Conn]*Client
+	clients    map[*Client]bool
 	broadcast  chan []byte
-	register   chan *websocket.Conn
-	unregister chan *websocket.Conn
+	register   chan *Client
+	unregister chan *Client
 	mu         sync.RWMutex
 	manager    *RoomManager
 }
@@ -23,6 +21,7 @@ type Room struct {
 type Client struct {
 	Conn     *websocket.Conn
 	Language string
+	Name     string
 }
 
 // Message represents a chat message
@@ -30,16 +29,17 @@ type Message struct {
 	Type     string `json:"type"`
 	Text     string `json:"text"`
 	Language string `json:"language,omitempty"`
+	Name     string `json:"name,omitempty"`
 }
 
 // NewRoom creates a new chat room with the given ID
 func NewRoom(id string, manager *RoomManager) *Room {
 	return &Room{
 		ID:         id,
-		clients:    make(map[*websocket.Conn]*Client),
+		clients:    make(map[*Client]bool),
 		broadcast:  make(chan []byte),
-		register:   make(chan *websocket.Conn),
-		unregister: make(chan *websocket.Conn),
+		register:   make(chan *Client),
+		unregister: make(chan *Client),
 		manager:    manager,
 	}
 }
@@ -50,34 +50,26 @@ func (r *Room) Run() {
 		select {
 		case client := <-r.register:
 			r.mu.Lock()
-			r.clients[client] = &Client{Conn: client, Language: "en"}
-			clientCount := len(r.clients)
+			r.clients[client] = true
 			r.mu.Unlock()
-			log.Printf("👋 Client joined room %s (total clients: %d)", r.ID, clientCount)
+			log.Printf("Client joined room %s", r.ID)
 
 		case client := <-r.unregister:
 			r.mu.Lock()
 			if _, ok := r.clients[client]; ok {
 				delete(r.clients, client)
-				client.Close()
-
-				clientCount := len(r.clients)
-				log.Printf("👋 Client left room %s (remaining clients: %d)", r.ID, clientCount)
-
-				// If this was the last client, remove the room
-				if clientCount == 0 {
-					r.manager.RemoveRoom(r.ID)
-					r.mu.Unlock()
-					return // Exit the Run loop as room is being removed
-				}
+				client.Conn.Close()
 			}
 			r.mu.Unlock()
+			log.Printf("Client left room %s", r.ID)
 
 		case message := <-r.broadcast:
 			r.mu.RLock()
 			for client := range r.clients {
-				if err := client.WriteMessage(websocket.TextMessage, message); err != nil {
-					client.Close()
+				err := client.Conn.WriteMessage(websocket.TextMessage, message)
+				if err != nil {
+					log.Printf("Error broadcasting message: %v", err)
+					client.Conn.Close()
 					delete(r.clients, client)
 				}
 			}
@@ -91,60 +83,34 @@ func (r *Room) BroadcastMessage(message []byte) {
 	r.broadcast <- message
 }
 
-// BroadcastTranslatedMessage sends a translated message to all clients in the room
-func (r *Room) BroadcastTranslatedMessage(text, fromLang string, sender *websocket.Conn, translateFn func(text, targetLang string) (string, error)) {
+// GetClients returns a slice of all clients in the room
+func (r *Room) GetClients() []*Client {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	// Broadcast to all clients (skipping sender)
-	for conn, client := range r.clients {
-		if conn == sender {
-			continue
-		}
-
-		// For the sender, use the original text
-		msgText := text
-		if conn != sender {
-			// For other clients, translate if needed
-			if translated, err := translateFn(text, client.Language); err == nil {
-				msgText = translated
-			}
-		}
-
-		msg := Message{
-			Type: "message",
-			Text: msgText,
-		}
-
-		msgBytes, err := json.Marshal(msg)
-		if err != nil {
-			continue
-		}
-
-		if err := conn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
-			conn.Close()
-			delete(r.clients, conn)
-		}
+	clients := make([]*Client, 0, len(r.clients))
+	for client := range r.clients {
+		clients = append(clients, client)
 	}
+	return clients
 }
 
 // AddClient adds a new client to the room
-func (r *Room) AddClient(client *websocket.Conn) {
+func (r *Room) AddClient(client *Client) {
 	r.register <- client
 }
 
 // RemoveClient removes a client from the room
-func (r *Room) RemoveClient(client *websocket.Conn) {
+func (r *Room) RemoveClient(client *Client) {
 	r.unregister <- client
 }
 
 // SetClientLanguage sets the language preference for a client
-func (r *Room) SetClientLanguage(client *websocket.Conn, language string) {
+func (r *Room) SetClientLanguage(client *Client, language string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if c, exists := r.clients[client]; exists {
-		c.Language = language
-	}
+
+	client.Language = language
 }
 
 // GetClientCount returns the current number of clients in the room

@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -14,7 +13,6 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/sashabaranov/go-openai"
 	"shabe/chat"
-	"shabe/config"
 )
 
 func init() {
@@ -39,12 +37,7 @@ type Message struct {
 	RoomID   string `json:"roomId"`
 	Text     string `json:"text,omitempty"`
 	Language string `json:"language,omitempty"`
-}
-
-type Client struct {
-	conn     *websocket.Conn
-	room     *chat.Room
-	language string
+	Name     string `json:"name,omitempty"`
 }
 
 func translateText(text, fromLang, toLang string) (string, error) {
@@ -52,8 +45,8 @@ func translateText(text, fromLang, toLang string) (string, error) {
 		return text, nil
 	}
 
-	prompt := fmt.Sprintf("Translate the following text from %s to %s:\n\n%s", fromLang, toLang, text)
-
+	prompt := fmt.Sprintf("Translate the following text from %s to %s. Maintain the same tone and meaning:\n\n%s", fromLang, toLang, text)
+	
 	resp, err := openaiClient.CreateChatCompletion(
 		context.Background(),
 		openai.ChatCompletionRequest{
@@ -68,80 +61,99 @@ func translateText(text, fromLang, toLang string) (string, error) {
 	)
 
 	if err != nil {
-		return text, err // Return original text on error
+		return "", fmt.Errorf("translation error: %v", err)
+	}
+
+	if len(resp.Choices) == 0 {
+		return "", fmt.Errorf("no translation received")
 	}
 
 	return resp.Choices[0].Message.Content, nil
 }
 
 func handleWebSocket(w http.ResponseWriter, r *http.Request) {
-	log.Printf("WebSocket connection attempt from %s", r.RemoteAddr)
-	
 	roomID := r.URL.Query().Get("roomId")
 	if roomID == "" {
-		log.Printf("Error: No room ID provided")
 		http.Error(w, "Room ID is required", http.StatusBadRequest)
 		return
 	}
 
-	log.Printf("Attempting to upgrade connection for room: %s", roomID)
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("Error: Failed to upgrade connection: %v", err)
+		log.Printf("WebSocket upgrade error: %v", err)
 		return
 	}
 
-	log.Printf("Successfully upgraded connection for room: %s", roomID)
-
-	room := roomManager.GetOrCreateRoom(roomID)
-	client := &Client{
-		conn:     conn,
-		room:     room,
-		language: "en", // Default language
+	client := &chat.Client{
+		Conn:     conn,
+		Language: "en",
+		Name:     "Anonymous",
 	}
 
-	room.AddClient(conn)
+	room := roomManager.GetOrCreateRoom(roomID)
+	room.AddClient(client)
+
 	defer func() {
-		room.RemoveClient(conn)
 		conn.Close()
+		room.RemoveClient(client)
 	}()
 
-	// Handle incoming messages
 	for {
-		_, msgBytes, err := conn.ReadMessage()
-		if err != nil {
-			log.Printf("Error reading message: %v", err)
-			break
-		}
-
 		var msg Message
-		if err := json.Unmarshal(msgBytes, &msg); err != nil {
-			log.Printf("Error unmarshaling message: %v", err)
-			continue
+		err := conn.ReadJSON(&msg)
+		if err != nil {
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				log.Printf("WebSocket error: %v", err)
+			}
+			break
 		}
 
 		switch msg.Type {
 		case "preferences":
-			client.language = msg.Language
-			room.SetClientLanguage(conn, msg.Language)
-			log.Printf("Updated client language to: %s", msg.Language)
+			client.Language = msg.Language
+			if msg.Name != "" {
+				client.Name = msg.Name
+			}
+			room.SetClientLanguage(client, msg.Language)
 
 		case "message":
-			if msg.RoomID != roomID {
+			if msg.Text == "" {
 				continue
 			}
 
-			// Get all clients in the room
-			room.BroadcastTranslatedMessage(msg.Text, msg.Language, client.conn, func(text, targetLang string) (string, error) {
-				return translateText(text, msg.Language, targetLang)
-			})
+			// Set message name if not provided
+			if msg.Name == "" {
+				msg.Name = client.Name
+			}
+
+			// Broadcast translated message to all clients in the room
+			for _, c := range room.GetClients() {
+				if c == client {
+					continue
+				}
+
+				translatedText, err := translateText(msg.Text, msg.Language, c.Language)
+				if err != nil {
+					log.Printf("Translation error: %v", err)
+					continue
+				}
+
+				response := Message{
+					Type: "message",
+					Text: translatedText,
+					Name: msg.Name,
+				}
+
+				err = c.Conn.WriteJSON(response)
+				if err != nil {
+					log.Printf("WebSocket write error: %v", err)
+				}
+			}
 		}
 	}
 }
 
 func main() {
-	log.Println(" Starting Shabe chat server...")
-
 	// Get OpenAI API key from environment variable
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
@@ -149,30 +161,29 @@ func main() {
 	}
 	openaiClient = openai.NewClient(apiKey)
 
-	r := mux.NewRouter()
-
-	// WebSocket endpoint - must be defined before the catch-all handler
-	r.HandleFunc("/ws", handleWebSocket)
-
+	// Initialize router and routes
+	router := mux.NewRouter()
+	
 	// Serve static files
-	fs := http.FileServer(http.Dir("frontend"))
-	r.PathPrefix("/").Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		log.Printf("HTTP request: %s %s", r.Method, r.URL.Path)
-		// If the file doesn't exist, serve index.html
-		path := filepath.Join("frontend", r.URL.Path)
-		_, err := os.Stat(path)
-		if os.IsNotExist(err) {
-			http.ServeFile(w, r, "frontend/index.html")
-			return
-		}
-		fs.ServeHTTP(w, r)
-	}))
-
+	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("static"))))
+	
+	// WebSocket endpoint
+	router.HandleFunc("/ws", handleWebSocket)
+	
+	// Serve index.html
+	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		indexPath := filepath.Join("static", "index.html")
+		http.ServeFile(w, r, indexPath)
+	})
+	
+	// Start server
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-
-	log.Printf("Server starting on http://localhost:%s", port)
-	log.Fatal(http.ListenAndServe(":"+port, r))
+	
+	log.Printf("Starting server on port %s", port)
+	if err := http.ListenAndServe(":"+port, router); err != nil {
+		log.Fatal(err)
+	}
 }
