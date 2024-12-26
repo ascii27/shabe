@@ -24,7 +24,7 @@ WORKDIR /app
 # Copy the binary from builder
 COPY --from=builder /app/shabe .
 # Copy frontend files
-COPY --from=builder /app/frontend ./frontend
+COPY --from=builder /app/static ./static
 
 # Set environment variables
 ENV PORT=8080
