@@ -443,12 +443,12 @@ function createTranslatorUI() {
   controls.className = 'shabe-controls';
   
   const startButton = document.createElement('button');
-  startButton.textContent = 'Start Translation';
+  startButton.textContent = 'Start';
   startButton.id = 'start-translation';
   startButton.addEventListener('click', startTranslation);
   
   const stopButton = document.createElement('button');
-  stopButton.textContent = 'Stop Translation';
+  stopButton.textContent = 'Pause';
   stopButton.id = 'stop-translation';
   stopButton.disabled = true;
   stopButton.addEventListener('click', stopTranslation);
