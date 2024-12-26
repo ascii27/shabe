@@ -66,37 +66,93 @@
   position: fixed;
   bottom: 80px;
   right: 20px;
-  width: 280px;
+  width: 340px;
+  max-height: calc(100vh - 100px);
   background: white;
   border-radius: 8px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-  padding: 16px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1), 0 2px 6px rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(8px);
   display: flex;
   flex-direction: column;
   gap: 12px;
-  z-index: 9999;
-  font-family: 'Google Sans', 'Roboto', sans-serif;
+  padding: 16px;
+  z-index: 1000;
 }
 
-.shabe-name-container {
-  margin-bottom: 8px;
+.shabe-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: -8px -8px 0 0;
+}
+
+.shabe-header-status {
+  font-size: 14px;
+  color: #5f6368;
+}
+
+.shabe-header-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.shabe-icon-button {
+  background: none;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #5f6368;
+}
+
+.shabe-icon-button:hover {
+  background-color: rgba(95, 99, 104, 0.1);
+}
+
+.shabe-icon-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.shabe-icon-button i {
+  font-size: 20px;
+}
+
+.shabe-inputs-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .shabe-name-input {
-  width: calc(100% - 16px);
-  padding: 8px;
+  width: 200px;
+  padding: 8px 12px;
   border: 1px solid #dadce0;
   border-radius: 4px;
   font-size: 14px;
+  box-sizing: border-box;
+}
+
+.shabe-name-input:focus {
+  outline: none;
+  border-color: #1a73e8;
 }
 
 .shabe-language-select {
-  width: 100%;
-  padding: 8px;
+  width: 120px;
+  padding: 8px 12px;
   border: 1px solid #dadce0;
   border-radius: 4px;
   font-size: 14px;
   background: white;
+}
+
+.shabe-language-select:focus {
+  outline: none;
+  border-color: #1a73e8;
 }
 
 .shabe-controls {
@@ -109,11 +165,12 @@
   padding: 8px 16px;
   border: none;
   border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
   background: #1a73e8;
   color: white;
-  cursor: pointer;
-  font-size: 14px;
-  transition: background 0.2s;
+  transition: background-color 0.2s;
 }
 
 .shabe-controls button:hover {
@@ -125,70 +182,56 @@
   cursor: not-allowed;
 }
 
-.shabe-status {
-  text-align: center;
-  color: #5f6368;
-  font-size: 12px;
-  padding: 4px;
-  border-radius: 4px;
-  background: #f1f3f4;
-}
-
 .shabe-messages {
-  max-height: 300px;
+  flex: 1;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 8px;
+  padding: 12px;
   background: #f8f9fa;
-  border-radius: 4px;
+  border-radius: 8px;
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 200px;
+  max-height: calc(100vh - 300px);
 }
 
 .message {
-  display: flex;
-  flex-direction: column;
-  max-width: 85%;
-  padding: 8px 12px;
-  border-radius: 12px;
+  padding: 12px;
+  margin-bottom: 8px;
+  border-radius: 8px;
   background: white;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .message.own {
-  align-self: flex-end;
-  background: #e3f2fd;
+  background: #e8f0fe;
 }
 
 .message-name {
-  font-size: 12px;
+  display: block;
   font-weight: 500;
-  color: #1a73e8;
   margin-bottom: 4px;
+  color: #202124;
 }
 
 .message-text {
-  font-size: 14px;
-  color: #202124;
-  line-height: 1.4;
-  word-break: break-word;
+  display: block;
+  color: #3c4043;
 }
 
-/* Scrollbar styling */
-.shabe-messages::-webkit-scrollbar {
+::-webkit-scrollbar {
   width: 8px;
 }
 
-.shabe-messages::-webkit-scrollbar-track {
+::-webkit-scrollbar-track {
   background: #f1f3f4;
   border-radius: 4px;
 }
 
-.shabe-messages::-webkit-scrollbar-thumb {
+::-webkit-scrollbar-thumb {
   background: #dadce0;
   border-radius: 4px;
 }
 
-.shabe-messages::-webkit-scrollbar-thumb:hover {
+::-webkit-scrollbar-thumb:hover {
   background: #bdc1c6;
 }
