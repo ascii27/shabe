@@ -59,9 +59,15 @@ func (r *Room) Run() {
 			if _, ok := r.clients[client]; ok {
 				delete(r.clients, client)
 				client.Conn.Close()
+
+				log.Printf("Client left room %s", r.ID)
+
+				// If this was the last client, remove the room
+				if len(r.clients) == 0 {
+					r.manager.RemoveRoom(r.ID)
+				}
 			}
 			r.mu.Unlock()
-			log.Printf("Client left room %s", r.ID)
 
 		case message := <-r.broadcast:
 			r.mu.RLock()

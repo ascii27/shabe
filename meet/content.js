@@ -143,6 +143,16 @@ function toggleUI() {
   if (button) {
     button.classList.toggle('active', isUIVisible);
   }
+
+  // Connect or disconnect WebSocket based on UI visibility
+  if (isUIVisible) {
+    connectToRoom();
+  } else {
+    if (ws) {
+      ws.close();
+      ws = null;
+    }
+  }
 }
 
 function setupSpeechRecognition() {
@@ -320,8 +330,14 @@ function connectToRoom() {
     if (isTranslating) {
       stopTranslation();
     }
-    // Try to reconnect after a delay if we're still in a valid room
-    if (extractMeetRoomId(window.location.href) === currentRoom) {
+    
+    // Only try to reconnect if:
+    // 1. We're still in the same room
+    // 2. The UI is visible
+    // 3. We haven't started a new connection already
+    if (extractMeetRoomId(window.location.href) === currentRoom && 
+        isUIVisible && 
+        !ws) {
       setTimeout(connectToRoom, 5000);
     }
   };
