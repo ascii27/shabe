@@ -1,14 +1,15 @@
 let ws = null;
-let currentRoom = null;
-let selectedLanguage = 'en';
 let recognition = null;
 let isTranslating = false;
-let userName = 'Anonymous';
+let userName = '';
 let lastUrl = window.location.href;
 let isUIVisible = false;
 let uiInitialized = false;
 let retryAttempt = 0;
 let maxRetryAttempts = 5;
+let popupWindow = null;
+let currentRoom = null;
+let selectedLanguage = 'en';
 let isRetrying = false;
 let hasHitMaxRetries = false;
 
@@ -70,6 +71,11 @@ function addMeetButtonWithBackoff() {
     return;
   }
 
+  // Check if our button already exists
+  if (document.querySelector('.shabe-button-container')) {
+    return;
+  }
+
   console.log('Found Meet toolbar, adding button');
 
   // Create button container with Meet's standard structure
@@ -89,16 +95,8 @@ function addMeetButtonWithBackoff() {
   toggleButton.setAttribute('data-tooltip-enabled', 'true');
   
   // Create the button content structure
-  toggleButton.innerHTML = `
-    <span class="OiePBf-zPjgPe VYBDae-Bz112c-UHGRz"></span>
-    <span class="RBHQF-ksKsZd"></span>
-    <span aria-hidden="true" class="VYBDae-Bz112c-kBDsod-Rtc0Jf">
-      <i aria-hidden="true" class="google-symbols ebW6mc NtU4hc">translate</i>
-      <i aria-hidden="true" class="google-symbols hi38gd Mwv9k">translate</i>
-    </span>
-    <div class="VYBDae-Bz112c-RLmnJb"></div>
-  `;
-
+  toggleButton.innerHTML = '<i class="google-symbols">translate</i>';
+  
   toggleButton.addEventListener('click', toggleUI);
 
   // Add tooltip
@@ -129,21 +127,21 @@ function addMeetButtonWithBackoff() {
 
 // Function to toggle UI visibility
 function toggleUI() {
-  console.log('Toggling UI visibility');
-  const translator = document.querySelector('.shabe-translator');
-  if (translator) {
-    isUIVisible = !isUIVisible;
-    translator.style.display = isUIVisible ? 'flex' : 'none';
-    
-    // Update button state
-    const button = document.querySelector('.shabe-toggle-button');
-    if (button) {
-      button.classList.toggle('active', isUIVisible);
-    }
-  } else {
-    console.log('No translator UI found, creating one...');
-    isUIVisible = true;
-    createTranslatorUI();
+  if (popupWindow && !popupWindow.closed) {
+    popupWindow.focus();
+    return;
+  }
+
+  const container = document.querySelector('.shabe-translator');
+  if (!container) return;
+
+  isUIVisible = !isUIVisible;
+  container.style.display = isUIVisible ? 'flex' : 'none';
+
+  // Update button state
+  const button = document.querySelector('.shabe-button-container button');
+  if (button) {
+    button.classList.toggle('active', isUIVisible);
   }
 }
 
@@ -217,6 +215,26 @@ function startTranslation() {
   isTranslating = true;
   try {
     recognition.start();
+    
+    // Update main window
+    const startButton = document.getElementById('start-translation');
+    const stopButton = document.getElementById('stop-translation');
+    const status = document.getElementById('status');
+    
+    if (startButton) startButton.disabled = true;
+    if (stopButton) stopButton.disabled = false;
+    if (status) status.textContent = 'Connected';
+    
+    // Update popup window if it exists
+    if (popupWindow && !popupWindow.closed) {
+      const popupStartButton = popupWindow.document.getElementById('start-translation');
+      const popupStopButton = popupWindow.document.getElementById('stop-translation');
+      const popupStatus = popupWindow.document.getElementById('status');
+      
+      if (popupStartButton) popupStartButton.disabled = true;
+      if (popupStopButton) popupStopButton.disabled = false;
+      if (popupStatus) popupStatus.textContent = 'Connected';
+    }
   } catch (error) {
     console.error('Failed to start translation:', error);
   }
@@ -226,10 +244,26 @@ function stopTranslation() {
   if (!recognition) return;
   
   isTranslating = false;
-  try {
-    recognition.stop();
-  } catch (error) {
-    console.error('Failed to stop translation:', error);
+  recognition.stop();
+  
+  // Update main window
+  const startButton = document.getElementById('start-translation');
+  const stopButton = document.getElementById('stop-translation');
+  const status = document.getElementById('status');
+  
+  if (startButton) startButton.disabled = false;
+  if (stopButton) stopButton.disabled = true;
+  if (status) status.textContent = 'Paused';
+  
+  // Update popup window if it exists
+  if (popupWindow && !popupWindow.closed) {
+    const popupStartButton = popupWindow.document.getElementById('start-translation');
+    const popupStopButton = popupWindow.document.getElementById('stop-translation');
+    const popupStatus = popupWindow.document.getElementById('status');
+    
+    if (popupStartButton) popupStartButton.disabled = false;
+    if (popupStopButton) popupStopButton.disabled = true;
+    if (popupStatus) popupStatus.textContent = 'Paused';
   }
 }
 
@@ -320,16 +354,34 @@ function sendPreferences() {
 }
 
 // Function to display a message
-function displayMessage(text, isOwn = false, senderName = '') {
-  const messages = document.getElementById('messages');
-  if (!messages) return;
+function displayMessage(text, isSelf = false, name = 'Anonymous') {
+  const message = createMessageElement(text, isSelf, name);
   
+  // Add to main window
+  const mainMessages = document.querySelector('#messages');
+  if (mainMessages) {
+    mainMessages.appendChild(message.cloneNode(true));
+    mainMessages.scrollTop = mainMessages.scrollHeight;
+  }
+  
+  // Add to popup window if it exists
+  if (popupWindow && !popupWindow.closed) {
+    const popupMessages = popupWindow.document.querySelector('#messages');
+    if (popupMessages) {
+      popupMessages.appendChild(message.cloneNode(true));
+      popupMessages.scrollTop = popupMessages.scrollHeight;
+    }
+  }
+}
+
+// Function to create a message element
+function createMessageElement(text, isSelf = false, name = 'Anonymous') {
   const messageDiv = document.createElement('div');
-  messageDiv.className = `message ${isOwn ? 'own' : ''}`;
+  messageDiv.className = `message ${isSelf ? 'own' : ''}`;
   
   const nameSpan = document.createElement('span');
   nameSpan.className = 'message-name';
-  nameSpan.textContent = senderName || (isOwn ? userName : 'Anonymous');
+  nameSpan.textContent = name;
   
   const textSpan = document.createElement('span');
   textSpan.className = 'message-text';
@@ -338,13 +390,7 @@ function displayMessage(text, isOwn = false, senderName = '') {
   messageDiv.appendChild(nameSpan);
   messageDiv.appendChild(textSpan);
   
-  messages.appendChild(messageDiv);
-  messages.scrollTop = messages.scrollHeight;
-  
-  // Remove old messages if there are too many
-  while (messages.children.length > 50) {
-    messages.removeChild(messages.firstChild);
-  }
+  return messageDiv;
 }
 
 // Function to send a message
@@ -362,47 +408,316 @@ function sendMessage(text) {
   displayMessage(text, true, userName);
 }
 
-// Listen for messages from the background script
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  console.log('Received message:', message);
-  
-  if (message.type === 'TOGGLE_UI') {
-    console.log('Toggling UI visibility');
-    toggleUI();
-    sendResponse({ success: true });
-    return true; // Keep the message channel open for the async response
+// Function to create detached window
+function createDetachedWindow() {
+  if (popupWindow && !popupWindow.closed) {
+    popupWindow.focus();
+    return;
   }
-  
-  return false;
-});
+
+  const width = 340;
+  const height = 500;
+  const left = (window.screen.width - width) / 2;
+  const top = (window.screen.height - height) / 2;
+
+  popupWindow = window.open('', 'ShabeTranslator', 
+    `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=no,location=no`
+  );
+
+  if (popupWindow) {
+    // Add styles to popup
+    const style = popupWindow.document.createElement('style');
+    style.textContent = `
+      body {
+        font-family: 'Google Sans', 'Roboto', sans-serif;
+        margin: 0;
+        padding: 16px;
+        background: white;
+        height: calc(100vh - 32px);
+        display: flex;
+        flex-direction: column;
+      }
+
+      .shabe-translator {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        gap: 12px;
+      }
+
+      .shabe-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: -8px -8px 0 0;
+        flex-shrink: 0;
+      }
+
+      .shabe-header-status {
+        font-size: 14px;
+        color: #5f6368;
+      }
+
+      .shabe-header-controls {
+        display: flex;
+        gap: 4px;
+      }
+
+      .shabe-icon-button {
+        background: none;
+        border: none;
+        padding: 4px 8px;
+        cursor: pointer;
+        border-radius: 4px;
+        color: #5f6368;
+        font-size: 14px;
+      }
+
+      .shabe-icon-button:hover {
+        background-color: rgba(95, 99, 104, 0.1);
+      }
+
+      .shabe-icon-button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .shabe-inputs-row {
+        display: flex;
+        gap: 8px;
+        margin: 12px 0;
+        flex-shrink: 0;
+      }
+
+      .shabe-name-input {
+        width: 200px;
+        padding: 8px 12px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        font-size: 14px;
+        box-sizing: border-box;
+      }
+
+      .shabe-name-input:focus {
+        outline: none;
+        border-color: #1a73e8;
+      }
+
+      .shabe-language-select {
+        width: 120px;
+        padding: 8px 12px;
+        border: 1px solid #dadce0;
+        border-radius: 4px;
+        font-size: 14px;
+        background: white;
+      }
+
+      .shabe-language-select:focus {
+        outline: none;
+        border-color: #1a73e8;
+      }
+
+      .shabe-messages {
+        flex: 1;
+        overflow-y: auto;
+        padding: 12px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        font-size: 14px;
+        line-height: 1.5;
+        min-height: 100px;
+      }
+
+      .message {
+        padding: 12px;
+        margin-bottom: 8px;
+        border-radius: 8px;
+        background: white;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+      }
+
+      .message.own {
+        background: #e8f0fe;
+      }
+
+      .message-name {
+        display: block;
+        font-weight: 500;
+        margin-bottom: 4px;
+        color: #202124;
+      }
+
+      .message-text {
+        display: block;
+        color: #3c4043;
+      }
+
+      ::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      ::-webkit-scrollbar-track {
+        background: #f1f3f4;
+        border-radius: 4px;
+      }
+
+      ::-webkit-scrollbar-thumb {
+        background: #dadce0;
+        border-radius: 4px;
+      }
+
+      ::-webkit-scrollbar-thumb:hover {
+        background: #bdc1c6;
+      }
+
+      /* fallback */
+      @font-face {
+        font-family: 'Material Symbols Outlined';
+        font-style: normal;
+        font-weight: 400;
+        src: url(chrome-extension://${chrome.runtime.id}/google-symbols.woff2) format('woff2');
+      }
+
+      .google-symbols {
+          font-family: 'Material Symbols Outlined';
+          font-weight: normal;
+          font-style: normal;
+          font-size: 24px;
+          line-height: 1;
+          letter-spacing: normal;
+          text-transform: none;
+          display: inline-block;
+          white-space: nowrap;
+          word-wrap: normal;
+          direction: ltr;
+          -webkit-font-feature-settings: 'liga';
+          -webkit-font-smoothing: antialiased;
+      }
+    `;
+    popupWindow.document.head.appendChild(style);
+
+    // Create and append the UI elements
+    const container = popupWindow.document.createElement('div');
+    container.className = 'shabe-translator';
+    popupWindow.document.body.appendChild(container);
+
+    // Copy the UI content
+    container.innerHTML = document.querySelector('.shabe-translator').innerHTML;
+
+    // Reattach event listeners
+    const startButton = container.querySelector('#start-translation');
+    const stopButton = container.querySelector('#stop-translation');
+    const nameInput = container.querySelector('.shabe-name-input');
+    const languageSelect = container.querySelector('.shabe-language-select');
+
+    if (startButton) startButton.addEventListener('click', startTranslation);
+    if (stopButton) stopButton.addEventListener('click', stopTranslation);
+    if (nameInput) {
+      nameInput.value = userName;
+      nameInput.addEventListener('change', (e) => {
+        userName = e.target.value.trim();
+        localStorage.setItem('userName', userName);
+        sendPreferences();
+      });
+    }
+    if (languageSelect) {
+      languageSelect.value = selectedLanguage;
+      languageSelect.addEventListener('change', (e) => {
+        selectedLanguage = e.target.value;
+        localStorage.setItem('language', selectedLanguage);
+        if (recognition) {
+          recognition.lang = getSpeechLangCode(selectedLanguage);
+          if (isTranslating) {
+            stopTranslation();
+            startTranslation();
+          }
+        }
+        sendPreferences();
+      });
+    }
+
+    // Remove the detach button from popup
+    const detachButton = container.querySelector('.shabe-icon-button[aria-label="Detach window"]');
+    if (detachButton) detachButton.remove();
+
+    // Update the popup window title
+    popupWindow.document.title = 'Shabe Translator';
+
+    // Handle window close
+    popupWindow.addEventListener('beforeunload', () => {
+      isDetached = false;
+      const mainContainer = document.querySelector('.shabe-translator');
+      if (mainContainer) mainContainer.style.display = '';
+    });
+
+    isDetached = true;
+    document.querySelector('.shabe-translator').style.display = 'none';
+  }
+}
 
 // Function to create and inject the translator UI
 function createTranslatorUI() {
   if (uiInitialized) return;
   
-  // Create translator panel
   const container = document.createElement('div');
   container.className = 'shabe-translator';
   container.style.display = 'none';
   
-  // Create name input
-  const nameContainer = document.createElement('div');
-  nameContainer.className = 'shabe-name-container';
+  // Create header with status and buttons
+  const header = document.createElement('div');
+  header.className = 'shabe-header';
+
+  const headerStatus = document.createElement('div');
+  headerStatus.className = 'shabe-header-status';
+  headerStatus.id = 'status';
+  headerStatus.textContent = 'Not connected';
+  
+  const headerControls = document.createElement('div');
+  headerControls.className = 'shabe-header-controls';
+
+  const startButton = document.createElement('button');
+  startButton.id = 'start-translation';
+  startButton.className = 'shabe-icon-button';
+  startButton.innerHTML = '<i class="google-symbols">play_circle</i>';
+  startButton.setAttribute('aria-label', 'Start Translation');
+  startButton.addEventListener('click', startTranslation);
+  
+  const stopButton = document.createElement('button');
+  stopButton.id = 'stop-translation';
+  stopButton.className = 'shabe-icon-button';
+  stopButton.innerHTML = '<i class="google-symbols">pause_circle</i>';
+  stopButton.setAttribute('aria-label', 'Pause Translation');
+  stopButton.disabled = true;
+  stopButton.addEventListener('click', stopTranslation);
+  
+  const detachButton = document.createElement('button');
+  detachButton.className = 'shabe-icon-button';
+  detachButton.innerHTML = '<i class="google-symbols">open_in_new</i>';
+  detachButton.setAttribute('aria-label', 'Detach window');
+  detachButton.addEventListener('click', createDetachedWindow);
+
+  headerControls.appendChild(startButton);
+  headerControls.appendChild(stopButton);
+  headerControls.appendChild(detachButton);
+  
+  header.appendChild(headerStatus);
+  header.appendChild(headerControls);
+  container.appendChild(header);
+  
+  // Create inputs row with name and language
+  const inputsRow = document.createElement('div');
+  inputsRow.className = 'shabe-inputs-row';
   
   const nameInput = document.createElement('input');
   nameInput.type = 'text';
-  nameInput.placeholder = 'Enter your name';
-  nameInput.value = userName;
   nameInput.className = 'shabe-name-input';
+  nameInput.placeholder = 'Enter your name';
   nameInput.addEventListener('change', (e) => {
-    userName = e.target.value.trim() || 'Anonymous';
+    userName = e.target.value.trim();
     localStorage.setItem('userName', userName);
     sendPreferences();
   });
   
-  nameContainer.appendChild(nameInput);
-  
-  // Create language selector
   const languageSelect = document.createElement('select');
   languageSelect.className = 'shabe-language-select';
   const languages = {
@@ -415,15 +730,12 @@ function createTranslatorUI() {
     'de': 'Deutsch'
   };
   
-  for (const [code, name] of Object.entries(languages)) {
+  Object.entries(languages).forEach(([code, name]) => {
     const option = document.createElement('option');
     option.value = code;
     option.textContent = name;
-    if (code === selectedLanguage) {
-      option.selected = true;
-    }
     languageSelect.appendChild(option);
-  }
+  });
   
   languageSelect.addEventListener('change', (e) => {
     selectedLanguage = e.target.value;
@@ -438,42 +750,17 @@ function createTranslatorUI() {
     sendPreferences();
   });
   
-  // Create translation controls
-  const controls = document.createElement('div');
-  controls.className = 'shabe-controls';
-  
-  const startButton = document.createElement('button');
-  startButton.textContent = 'Start';
-  startButton.id = 'start-translation';
-  startButton.addEventListener('click', startTranslation);
-  
-  const stopButton = document.createElement('button');
-  stopButton.textContent = 'Pause';
-  stopButton.id = 'stop-translation';
-  stopButton.disabled = true;
-  stopButton.addEventListener('click', stopTranslation);
-  
-  // Create status display
-  const status = document.createElement('div');
-  status.id = 'status';
-  status.className = 'shabe-status';
-  status.textContent = 'Not connected';
+  // Add inputs to row
+  inputsRow.appendChild(nameInput);
+  inputsRow.appendChild(languageSelect);
+  container.appendChild(inputsRow);
   
   // Create messages container
   const messages = document.createElement('div');
   messages.id = 'messages';
   messages.className = 'shabe-messages';
-  
-  // Assemble the UI
-  controls.appendChild(startButton);
-  controls.appendChild(stopButton);
-  container.appendChild(nameContainer);
-  container.appendChild(languageSelect);
-  container.appendChild(controls);
-  container.appendChild(status);
   container.appendChild(messages);
   
-  // Add to page
   document.body.appendChild(container);
   
   // Load saved preferences
@@ -482,43 +769,56 @@ function createTranslatorUI() {
   
   if (savedName) {
     userName = savedName;
-    nameInput.value = userName;
+    nameInput.value = savedName;
   }
   
   if (savedLanguage) {
     selectedLanguage = savedLanguage;
+    languageSelect.value = savedLanguage;
+  }
+  
+  uiInitialized = true;
+  
+  connectToRoom();
+}
+
+// Listen for messages from the background script
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  console.log('Received message:', message);
+  
+  if (message.type === 'TOGGLE_UI') {
+    console.log('Toggling UI visibility');
+    toggleUI();
+    sendResponse({ success: true });
+    return true; // Keep the message channel open for the async response
+  }
+  
+  return false;
+});
+
+// Function to initialize the UI
+function initializeUI() {
+  if (uiInitialized) return;
+  
+  createTranslatorUI();
+  
+  userName = localStorage.getItem('userName') || 'Anonymous';
+  selectedLanguage = localStorage.getItem('language') || 'en';
+  
+  const nameInput = document.querySelector('.shabe-name-input');
+  if (nameInput) {
+    nameInput.value = userName;
+  }
+  
+  const languageSelect = document.querySelector('.shabe-language-select');
+  if (languageSelect) {
     languageSelect.value = selectedLanguage;
   }
   
   uiInitialized = true;
   
-  // Connect to room if valid room ID exists
-  connectToRoom();
-}
-
-// Function to initialize the UI
-function initializeUI() {
-  // Only initialize if we're in a valid meeting room
-  if (!isInMeetingRoom()) {
-    console.log('Not in a valid meeting room, skipping initialization');
-    return;
-  }
-
-  // Check if we're already initialized
-  if (document.querySelector('.shabe-translator')) {
-    console.log('UI already initialized');
-    return;
-  }
-
-  console.log('Initializing UI...');
-
-  // Create and inject the UI
-  createTranslatorUI();
-  
-  // Set up speech recognition
   setupSpeechRecognition();
   
-  // Start looking for the toolbar
   addMeetButtonWithBackoff();
 }
 
@@ -529,12 +829,10 @@ const urlObserver = new MutationObserver(() => {
     console.log('URL changed:', url);
     lastUrl = url;
     
-    // Reset all retry-related state
     retryAttempt = 0;
     isRetrying = false;
     hasHitMaxRetries = false;
     
-    // Remove existing UI elements before reinitializing
     const existingTranslator = document.querySelector('.shabe-translator');
     if (existingTranslator) {
       existingTranslator.remove();

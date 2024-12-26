@@ -4,25 +4,25 @@
   "version": "1.0",
   "description": "Real-time translation for Google Meet",
   "permissions": [
-    "activeTab",
+    "scripting",
+    "tabs",
     "storage"
   ],
   "host_permissions": [
-    "https://meet.google.com/*",
-    "ws://localhost:8080/*"
-  ],
-  "content_scripts": [
-    {
-      "matches": ["https://meet.google.com/*"],
-      "js": ["content.js"],
-      "css": ["styles.css"],
-      "run_at": "document_end"
-    }
+    "https://meet.google.com/*"
   ],
   "background": {
     "service_worker": "background.js"
   },
+  "content_scripts": [
+    {
+      "matches": ["https://meet.google.com/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"]
+    }
+  ],
   "action": {
+    "default_title": "Shabe Meet Translator",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
@@ -33,5 +33,11 @@
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["google-symbols.woff2"],
+      "matches": ["https://meet.google.com/*"]
+    }
+  ]
 }
