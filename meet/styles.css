@@ -1,8 +1,72 @@
+.shabe-button-container {
+  display: flex;
+  align-items: center;
+  padding: 0;
+}
+
+.shabe-button-container button {
+  position: relative;
+}
+
+.shabe-button-container button:hover {
+  background-color: rgba(232, 240, 254, 0.08);
+}
+
+.shabe-button-container button.active {
+  background-color: rgba(26, 115, 232, 0.1);
+}
+
+.shabe-button-container button.active i {
+  color: #1a73e8;
+}
+
+.shabe-button-container .google-symbols {
+  font-size: 24px;
+  color: #fff;
+}
+
+.shabe-toggle-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+  cursor: pointer;
+  color: #5f6368;
+  transition: background-color 0.2s;
+  position: relative;
+}
+
+.shabe-toggle-button:hover {
+  background-color: rgba(95, 99, 104, 0.1);
+}
+
+.shabe-toggle-button.active {
+  color: #1a73e8;
+  background-color: rgba(26, 115, 232, 0.1);
+}
+
+.shabe-button-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 10px;
+  gap: 4px;
+}
+
+.shabe-button-content svg {
+  width: 20px;
+  height: 20px;
+}
+
 .shabe-translator {
   position: fixed;
-  top: 20px;
+  bottom: 80px;
   right: 20px;
-  width: 300px;
+  width: 280px;
   background: white;
   border-radius: 8px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
@@ -14,45 +78,25 @@
   font-family: 'Google Sans', 'Roboto', sans-serif;
 }
 
-.shabe-header {
-  display: flex;
-  gap: 8px;
-  align-items: center;
+.shabe-name-container {
+  margin-bottom: 8px;
 }
 
-#shabe-name {
-  flex: 1;
+.shabe-name-input {
+  width: calc(100% - 16px);
   padding: 8px;
-  font-size: 14px;
-  color: #3c4043;
-  font-family: 'Google Sans', Roboto, Arial, sans-serif;
-  background: #f1f3f4;
+  border: 1px solid #dadce0;
   border-radius: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 14px;
 }
 
-#shabe-language {
+.shabe-language-select {
+  width: 100%;
   padding: 8px;
   border: 1px solid #dadce0;
   border-radius: 4px;
   font-size: 14px;
   background: white;
-  color: #3c4043;
-  font-family: 'Google Sans', Roboto, Arial, sans-serif;
-  cursor: pointer;
-  outline: none;
-  min-width: 100px;
-}
-
-#shabe-language:hover {
-  border-color: #1a73e8;
-}
-
-#shabe-language:focus {
-  border-color: #1a73e8;
-  box-shadow: 0 0 0 2px rgba(26, 115, 232, 0.2);
 }
 
 .shabe-controls {
@@ -81,35 +125,7 @@
   cursor: not-allowed;
 }
 
-#start-translation {
-  background: #1a73e8;
-  color: white;
-}
-
-#start-translation:hover {
-  background: #1557b0;
-}
-
-#start-translation:disabled {
-  background: #dadce0;
-  cursor: not-allowed;
-}
-
-#stop-translation {
-  background: #ea4335;
-  color: white;
-}
-
-#stop-translation:hover {
-  background: #d93025;
-}
-
-#stop-translation:disabled {
-  background: #dadce0;
-  cursor: not-allowed;
-}
-
-#shabe-status {
+.shabe-status {
   text-align: center;
   color: #5f6368;
   font-size: 12px;
