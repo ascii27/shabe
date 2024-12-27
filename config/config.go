@@ -1,9 +1,9 @@
 package config
 
 import (
+	"fmt"
+	"gopkg.in/yaml.v2"
 	"os"
-
-	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
@@ -12,6 +12,11 @@ type Config struct {
 		Port int    `yaml:"port"`
 		Host string `yaml:"host"`
 	} `yaml:"server"`
+	OAuth struct {
+		ClientID     string `yaml:"client_id"`
+		ClientSecret string `yaml:"client_secret"`
+		RedirectURL  string `yaml:"redirect_url"`
+	} `yaml:"oauth"`
 }
 
 func LoadConfig(configPath string) (*Config, error) {
@@ -20,15 +25,15 @@ func LoadConfig(configPath string) (*Config, error) {
 		configPath = "config.yaml"
 	}
 
-	file, err := os.Open(configPath)
+	file, err := os.ReadFile(configPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error reading config file: %v", err)
 	}
-	defer file.Close()
 
-	config := &Config{}
-	if err := yaml.NewDecoder(file).Decode(config); err != nil {
-		return nil, err
+	var config Config
+	err = yaml.Unmarshal(file, &config)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing config file: %v", err)
 	}
 
 	// Override with environment variable if present
@@ -36,5 +41,5 @@ func LoadConfig(configPath string) (*Config, error) {
 		config.OpenAIApiKey = envKey
 	}
 
-	return config, nil
+	return &config, nil
 }

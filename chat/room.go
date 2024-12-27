@@ -22,6 +22,7 @@ type Client struct {
 	Conn     *websocket.Conn
 	Language string
 	Name     string
+	Email    string
 }
 
 // Message represents a chat message
@@ -30,6 +31,7 @@ type Message struct {
 	Text     string `json:"text"`
 	Language string `json:"language,omitempty"`
 	Name     string `json:"name,omitempty"`
+	Email    string `json:"email,omitempty"`
 }
 
 // NewRoom creates a new chat room with the given ID
@@ -52,7 +54,7 @@ func (r *Room) Run() {
 			r.mu.Lock()
 			r.clients[client] = true
 			r.mu.Unlock()
-			log.Printf("Client joined room %s", r.ID)
+			log.Printf("Client %s joined room %s", client.Name, r.ID)
 
 		case client := <-r.unregister:
 			r.mu.Lock()
@@ -60,14 +62,13 @@ func (r *Room) Run() {
 				delete(r.clients, client)
 				client.Conn.Close()
 
-				log.Printf("Client left room %s", r.ID)
-
 				// If this was the last client, remove the room
 				if len(r.clients) == 0 {
 					r.manager.RemoveRoom(r.ID)
 				}
 			}
 			r.mu.Unlock()
+			log.Printf("Client %s left room %s", client.Name, r.ID)
 
 		case message := <-r.broadcast:
 			r.mu.RLock()

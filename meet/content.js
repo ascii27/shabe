@@ -4,14 +4,14 @@ let isTranslating = false;
 let userName = '';
 let lastUrl = window.location.href;
 let isUIVisible = false;
-let uiInitialized = false;
-let retryAttempt = 0;
-let maxRetryAttempts = 5;
 let popupWindow = null;
 let currentRoom = null;
 let selectedLanguage = 'en';
 let isRetrying = false;
 let hasHitMaxRetries = false;
+let retryAttempt = 0;
+let maxRetryAttempts = 5;
+let authToken = null;
 
 // Function to extract room ID from Google Meet URL
 function extractMeetRoomId(url) {
@@ -127,42 +127,32 @@ function addMeetButtonWithBackoff() {
 
 // Function to toggle UI visibility
 function toggleUI() {
-  if (popupWindow && !popupWindow.closed) {
-    popupWindow.focus();
+  if (!isInMeetingRoom()) {
+    console.log('Not in a valid meeting room');
     return;
   }
 
-  const container = document.querySelector('.shabe-translator');
-  if (!container) return;
-
-  isUIVisible = !isUIVisible;
-  container.style.display = isUIVisible ? 'flex' : 'none';
-
-  // Update button state
-  const button = document.querySelector('.shabe-button-container button');
-  if (button) {
-    button.classList.toggle('active', isUIVisible);
-  }
-
-  // Connect or disconnect WebSocket based on UI visibility
-  if (isUIVisible) {
-    connectToRoom();
+  if (!popupWindow) {
+    createDetachedWindow();
   } else {
+    popupWindow.remove();
+    popupWindow = null;
     if (ws) {
       ws.close();
       ws = null;
     }
+  }
+
+  // Update button state
+  const button = document.querySelector('.shabe-button-container button');
+  if (button) {
+    button.classList.toggle('active', popupWindow !== null);
   }
 }
 
 function setupSpeechRecognition() {
   if (!('webkitSpeechRecognition' in window)) {
     console.error('Speech recognition not supported');
-    const startButton = document.getElementById('start-translation');
-    if (startButton) {
-      startButton.disabled = true;
-      startButton.title = 'Speech recognition not supported in this browser';
-    }
     return;
   }
 
@@ -173,107 +163,82 @@ function setupSpeechRecognition() {
 
   recognition.onstart = () => {
     console.log('Speech recognition started');
-    document.getElementById('start-translation').disabled = true;
-    document.getElementById('stop-translation').disabled = false;
-    const status = document.getElementById('status');
-    if (status) {
-      status.textContent = 'Listening...';
-    }
   };
 
   recognition.onend = () => {
     console.log('Speech recognition ended');
-    document.getElementById('start-translation').disabled = false;
-    document.getElementById('stop-translation').disabled = true;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      const status = document.getElementById('status');
-      if (status) {
-        status.textContent = 'Connected';
-      }
-    }
-    
+    // Restart if still translating
     if (isTranslating) {
+      console.log('Restarting speech recognition');
       recognition.start();
     }
   };
 
   recognition.onresult = (event) => {
-    const result = event.results[event.results.length - 1];
-    if (result.isFinal) {
-      const text = result[0].transcript.trim();
-      if (text && ws && ws.readyState === WebSocket.OPEN) {
-        sendMessage(text);
+    if (!isTranslating || !ws || ws.readyState !== WebSocket.OPEN) return;
+
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        console.log('Final transcript:', transcript);
+        sendMessage(transcript);
       }
     }
   };
 
   recognition.onerror = (event) => {
     console.error('Speech recognition error:', event.error);
-    isTranslating = false;
-    document.getElementById('start-translation').disabled = false;
-    document.getElementById('stop-translation').disabled = true;
-    const status = document.getElementById('status');
-    if (status) {
-      status.textContent = 'Error: ' + event.error;
+    if (event.error === 'not-allowed') {
+      isTranslating = false;
+      const startButton = document.getElementById('start-button');
+      if (startButton) {
+        startButton.innerHTML = '<i class="google-symbols" style="font-size: 18px; vertical-align: middle;">mic_off</i>';
+        startButton.style.background = '#4CAF50';
+      }
+      const status = document.getElementById('status');
+      if (status) {
+        status.textContent = 'Microphone access denied';
+        status.style.color = '#f44336';
+      }
     }
   };
 }
 
 function startTranslation() {
-  if (!recognition || !ws || ws.readyState !== WebSocket.OPEN) return;
+  console.log('Starting translation');
+  if (!recognition) {
+    setupSpeechRecognition();
+  }
   
-  isTranslating = true;
-  try {
+  if (recognition) {
+    isTranslating = true;
     recognition.start();
+    console.log('Speech recognition started');
     
-    // Update main window
-    const startButton = document.getElementById('start-translation');
-    const stopButton = document.getElementById('stop-translation');
+    // Update status
     const status = document.getElementById('status');
-    
-    if (startButton) startButton.disabled = true;
-    if (stopButton) stopButton.disabled = false;
-    if (status) status.textContent = 'Connected';
-    
-    // Update popup window if it exists
-    if (popupWindow && !popupWindow.closed) {
-      const popupStartButton = popupWindow.document.getElementById('start-translation');
-      const popupStopButton = popupWindow.document.getElementById('stop-translation');
-      const popupStatus = popupWindow.document.getElementById('status');
-      
-      if (popupStartButton) popupStartButton.disabled = true;
-      if (popupStopButton) popupStopButton.disabled = false;
-      if (popupStatus) popupStatus.textContent = 'Connected';
+    if (status) {
+      status.textContent = 'Listening...';
+      status.style.color = '#f44336';
     }
-  } catch (error) {
-    console.error('Failed to start translation:', error);
+  } else {
+    console.error('Speech recognition not available');
   }
 }
 
 function stopTranslation() {
-  if (!recognition) return;
-  
-  isTranslating = false;
-  recognition.stop();
-  
-  // Update main window
-  const startButton = document.getElementById('start-translation');
-  const stopButton = document.getElementById('stop-translation');
-  const status = document.getElementById('status');
-  
-  if (startButton) startButton.disabled = false;
-  if (stopButton) stopButton.disabled = true;
-  if (status) status.textContent = 'Paused';
-  
-  // Update popup window if it exists
-  if (popupWindow && !popupWindow.closed) {
-    const popupStartButton = popupWindow.document.getElementById('start-translation');
-    const popupStopButton = popupWindow.document.getElementById('stop-translation');
-    const popupStatus = popupWindow.document.getElementById('status');
+  console.log('Stopping translation');
+  if (recognition) {
+    isTranslating = false;
+    recognition.stop();
+    console.log('Speech recognition stopped');
     
-    if (popupStartButton) popupStartButton.disabled = false;
-    if (popupStopButton) popupStopButton.disabled = true;
-    if (popupStatus) popupStatus.textContent = 'Paused';
+    // Update status
+    const status = document.getElementById('status');
+    if (status) {
+      status.textContent = 'Connected';
+      status.style.color = '#4CAF50';
+    }
   }
 }
 
@@ -292,68 +257,86 @@ function getSpeechLangCode(lang) {
 
 // Function to connect to WebSocket
 function connectToRoom() {
-  const roomId = extractMeetRoomId(window.location.href);
-  if (!roomId) {
-    console.log('No valid room ID found in URL');
+  console.log('Connecting to room:', currentRoom, 'with token:', authToken);
+  if (!currentRoom) {
+    console.error('Cannot connect: no room ID');
     const status = document.getElementById('status');
     if (status) {
-      status.textContent = 'Not in a valid meeting room';
+      status.textContent = 'Error: No room ID';
+      status.style.color = '#f44336';
     }
     return;
   }
 
-  if (ws) {
-    ws.close();
+  if (!authToken) {
+    console.error('Cannot connect: no auth token');
+    const status = document.getElementById('status');
+    if (status) {
+      status.textContent = 'Error: Not authenticated';
+      status.style.color = '#f44336';
+    }
+    return;
   }
 
-  currentRoom = roomId;
-  const wsUrl = 'ws://localhost:8080/ws?roomId=' + roomId;
-  
-  console.log('Connecting to WebSocket:', wsUrl);
+  // Don't create multiple connections
+  if (ws && ws.readyState !== WebSocket.CLOSED) {
+    console.log('WebSocket already connected or connecting');
+    return;
+  }
+
+  const wsUrl = `ws://localhost:8080/ws?token=${encodeURIComponent(authToken)}&roomId=${encodeURIComponent(currentRoom)}`;
+  console.log('Connecting to websocket:', wsUrl);
   ws = new WebSocket(wsUrl);
-  
+
   ws.onopen = () => {
     console.log('WebSocket connected');
     const status = document.getElementById('status');
     if (status) {
       status.textContent = 'Connected';
+      status.style.color = '#4CAF50';
     }
     sendPreferences();
   };
-  
-  ws.onclose = () => {
-    console.log('WebSocket disconnected');
+
+  ws.onclose = (event) => {
+    console.log('WebSocket disconnected:', event.code, event.reason);
     const status = document.getElementById('status');
     if (status) {
       status.textContent = 'Disconnected';
+      status.style.color = '#f44336';
     }
-    if (isTranslating) {
-      stopTranslation();
-    }
-    
-    // Only try to reconnect if:
-    // 1. We're still in the same room
-    // 2. The UI is visible
-    // 3. We haven't started a new connection already
-    if (extractMeetRoomId(window.location.href) === currentRoom && 
-        isUIVisible && 
-        !ws) {
+
+    // Only attempt to reconnect if it was an abnormal closure and we're still in the same room
+    if (event.code !== 1000 && event.code !== 1001 && currentRoom && extractMeetRoomId(window.location.href) === currentRoom) {
+      console.log('Attempting to reconnect in 5 seconds...');
       setTimeout(connectToRoom, 5000);
+    } else {
+      ws = null;
     }
   };
-  
-  ws.onmessage = (event) => {
-    const message = JSON.parse(event.data);
-    if (message.type === 'message') {
-      displayMessage(message.text, false, message.name);
-    }
-  };
-  
+
   ws.onerror = (error) => {
     console.error('WebSocket error:', error);
     const status = document.getElementById('status');
     if (status) {
-      status.textContent = 'Connection error';
+      status.textContent = 'Connection Error';
+      status.style.color = '#f44336';
+    }
+  };
+
+  ws.onmessage = (event) => {
+    console.log('Received websocket message:', event.data);
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === 'message') {
+        console.log('Displaying message:', data);
+        const isSelf = data.name === userName;
+        if (!isSelf) {
+          displayMessage(data.text, isSelf, data.name || 'Anonymous');
+        }
+      }
+    } catch (error) {
+      console.error('Error handling websocket message:', error);
     }
   };
 }
@@ -371,47 +354,57 @@ function sendPreferences() {
 
 // Function to display a message
 function displayMessage(text, isSelf = false, name = 'Anonymous') {
-  const message = createMessageElement(text, isSelf, name);
+  console.log('Displaying message:', { text, isSelf, name });
   
-  // Add to main window
-  const mainMessages = document.querySelector('#messages');
-  if (mainMessages) {
-    mainMessages.appendChild(message.cloneNode(true));
-    mainMessages.scrollTop = mainMessages.scrollHeight;
+  const messagesDiv = document.getElementById('messages');
+  if (!messagesDiv) {
+    console.error('Messages div not found');
+    return;
   }
-  
-  // Add to popup window if it exists
-  if (popupWindow && !popupWindow.closed) {
-    const popupMessages = popupWindow.document.querySelector('#messages');
-    if (popupMessages) {
-      popupMessages.appendChild(message.cloneNode(true));
-      popupMessages.scrollTop = popupMessages.scrollHeight;
-    }
-  }
-}
 
-// Function to create a message element
-function createMessageElement(text, isSelf = false, name = 'Anonymous') {
   const messageDiv = document.createElement('div');
-  messageDiv.className = `message ${isSelf ? 'own' : ''}`;
-  
-  const nameSpan = document.createElement('span');
-  nameSpan.className = 'message-name';
+  messageDiv.className = `shabe-message ${isSelf ? 'self' : 'other'}`;
+  messageDiv.style.cssText = `
+    margin: 5px 0;
+    padding: 8px;
+    border-radius: 8px;
+    max-width: 80%;
+    ${isSelf ? 'margin-left: auto; background: #E3F2FD;' : 'margin-right: auto; background: #F5F5F5;'}
+  `;
+
+  const nameSpan = document.createElement('div');
+  nameSpan.className = 'shabe-message-name';
   nameSpan.textContent = name;
-  
-  const textSpan = document.createElement('span');
-  textSpan.className = 'message-text';
+  nameSpan.style.cssText = `
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 4px;
+  `;
+
+  const textSpan = document.createElement('div');
+  textSpan.className = 'shabe-message-text';
   textSpan.textContent = text;
-  
+  textSpan.style.cssText = `
+    word-break: break-word;
+  `;
+
   messageDiv.appendChild(nameSpan);
   messageDiv.appendChild(textSpan);
-  
-  return messageDiv;
+  messagesDiv.appendChild(messageDiv);
+  messagesDiv.scrollTop = messagesDiv.scrollHeight;
 }
 
 // Function to send a message
 function sendMessage(text) {
-  if (!ws || ws.readyState !== WebSocket.OPEN || !text.trim()) return;
+  console.log('Sending message:', text);
+  if (!ws || ws.readyState !== WebSocket.OPEN || !text.trim()) {
+    console.error('Cannot send message:', { 
+      wsExists: !!ws, 
+      wsState: ws ? ws.readyState : 'no ws',
+      text: text.trim()
+    });
+    return;
+  }
   
   const message = {
     type: 'message',
@@ -420,332 +413,312 @@ function sendMessage(text) {
     name: userName
   };
   
+  console.log('Sending websocket message:', message);
   ws.send(JSON.stringify(message));
   displayMessage(text, true, userName);
 }
 
 // Function to create detached window
 function createDetachedWindow() {
-  if (popupWindow && !popupWindow.closed) {
-    popupWindow.focus();
+  console.log('Creating detached window...');
+  if (popupWindow) {
+    console.log('Popup window already exists, returning');
     return;
   }
 
-  const width = 340;
-  const height = 500;
-  const left = (window.screen.width - width) / 2;
-  const top = (window.screen.height - height) / 2;
+  // Create the popup container
+  popupWindow = document.createElement('div');
+  popupWindow.className = 'shabe-popup';
+  popupWindow.style.position = 'fixed';
+  popupWindow.style.top = '20px';
+  popupWindow.style.right = '20px';
+  popupWindow.style.zIndex = '9999';
+  popupWindow.style.backgroundColor = 'white';
+  popupWindow.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
+  popupWindow.style.borderRadius = '8px';
+  popupWindow.style.width = '300px';
+  popupWindow.style.maxHeight = '80vh';
+  popupWindow.style.overflow = 'auto';
 
-  popupWindow = window.open('', 'ShabeTranslator', 
-    `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=no,location=no`
-  );
+  popupWindow.innerHTML = `
+    <div class="shabe-popup-header" style="padding: 10px; background-color: #f5f5f5; border-bottom: 1px solid #eee; border-radius: 8px 8px 0 0; display: flex; justify-content: space-between; align-items: center;">
+      <span>Shabe Translator</span>
+      <button class="shabe-close-button" style="background: none; border: none; font-size: 20px; cursor: pointer;">×</button>
+    </div>
+    <div class="shabe-popup-content" style="padding: 15px;">
+      <div class="shabe-login">
+        <h2>Please sign in to continue</h2>
+        <button id="google-login" class="shabe-google-button" style="display: flex; align-items: center; padding: 10px; border: 1px solid #ccc; border-radius: 4px; background: white; cursor: pointer;">
+          <img src="https://www.google.com/favicon.ico" alt="Google" style="width: 18px; height: 18px; margin-right: 10px;">
+          Sign in with Google
+        </button>
+      </div>
+    </div>
+  `;
 
-  if (popupWindow) {
-    // Add styles to popup
-    const style = popupWindow.document.createElement('style');
-    style.textContent = `
-      body {
-        font-family: 'Google Sans', 'Roboto', sans-serif;
-        margin: 0;
-        padding: 16px;
-        background: white;
-        height: calc(100vh - 32px);
-        display: flex;
-        flex-direction: column;
-      }
+  // Add the popup to the page
+  document.body.appendChild(popupWindow);
+  console.log('Added popup to page');
 
-      .shabe-translator {
-        display: flex;
-        flex-direction: column;
-        height: 100%;
-        gap: 12px;
-      }
-
-      .shabe-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin: -8px -8px 0 0;
-        flex-shrink: 0;
-      }
-
-      .shabe-header-status {
-        font-size: 14px;
-        color: #5f6368;
-      }
-
-      .shabe-header-controls {
-        display: flex;
-        gap: 4px;
-      }
-
-      .shabe-icon-button {
-        background: none;
-        border: none;
-        padding: 4px 8px;
-        cursor: pointer;
-        border-radius: 4px;
-        color: #5f6368;
-        font-size: 14px;
-      }
-
-      .shabe-icon-button:hover {
-        background-color: rgba(95, 99, 104, 0.1);
-      }
-
-      .shabe-icon-button:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
-
-      .shabe-inputs-row {
-        display: flex;
-        gap: 8px;
-        margin: 12px 0;
-        flex-shrink: 0;
-      }
-
-      .shabe-name-input {
-        width: 200px;
-        padding: 8px 12px;
-        border: 1px solid #dadce0;
-        border-radius: 4px;
-        font-size: 14px;
-        box-sizing: border-box;
-      }
-
-      .shabe-name-input:focus {
-        outline: none;
-        border-color: #1a73e8;
-      }
-
-      .shabe-language-select {
-        width: 120px;
-        padding: 8px 12px;
-        border: 1px solid #dadce0;
-        border-radius: 4px;
-        font-size: 14px;
-        background: white;
-      }
-
-      .shabe-language-select:focus {
-        outline: none;
-        border-color: #1a73e8;
-      }
-
-      .shabe-messages {
-        flex: 1;
-        overflow-y: auto;
-        padding: 12px;
-        background: #f8f9fa;
-        border-radius: 8px;
-        font-size: 14px;
-        line-height: 1.5;
-        min-height: 100px;
-      }
-
-      .message {
-        padding: 12px;
-        margin-bottom: 8px;
-        border-radius: 8px;
-        background: white;
-        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-      }
-
-      .message.own {
-        background: #e8f0fe;
-      }
-
-      .message-name {
-        display: block;
-        font-weight: 500;
-        margin-bottom: 4px;
-        color: #202124;
-      }
-
-      .message-text {
-        display: block;
-        color: #3c4043;
-      }
-
-      ::-webkit-scrollbar {
-        width: 8px;
-      }
-
-      ::-webkit-scrollbar-track {
-        background: #f1f3f4;
-        border-radius: 4px;
-      }
-
-      ::-webkit-scrollbar-thumb {
-        background: #dadce0;
-        border-radius: 4px;
-      }
-
-      ::-webkit-scrollbar-thumb:hover {
-        background: #bdc1c6;
-      }
-
-      /* fallback */
-      @font-face {
-        font-family: 'Material Symbols Outlined';
-        font-style: normal;
-        font-weight: 400;
-        src: url(chrome-extension://${chrome.runtime.id}/google-symbols.woff2) format('woff2');
-      }
-
-      .google-symbols {
-          font-family: 'Material Symbols Outlined';
-          font-weight: normal;
-          font-style: normal;
-          font-size: 24px;
-          line-height: 1;
-          letter-spacing: normal;
-          text-transform: none;
-          display: inline-block;
-          white-space: nowrap;
-          word-wrap: normal;
-          direction: ltr;
-          -webkit-font-feature-settings: 'liga';
-          -webkit-font-smoothing: antialiased;
-      }
-    `;
-    popupWindow.document.head.appendChild(style);
-
-    // Create and append the UI elements
-    const container = popupWindow.document.createElement('div');
-    container.className = 'shabe-translator';
-    popupWindow.document.body.appendChild(container);
-
-    // Copy the UI content
-    container.innerHTML = document.querySelector('.shabe-translator').innerHTML;
-
-    // Reattach event listeners
-    const startButton = container.querySelector('#start-translation');
-    const stopButton = container.querySelector('#stop-translation');
-    const nameInput = container.querySelector('.shabe-name-input');
-    const languageSelect = container.querySelector('.shabe-language-select');
-
-    if (startButton) startButton.addEventListener('click', startTranslation);
-    if (stopButton) stopButton.addEventListener('click', stopTranslation);
-    if (nameInput) {
-      nameInput.value = userName;
-      nameInput.addEventListener('change', (e) => {
-        userName = e.target.value.trim();
-        localStorage.setItem('userName', userName);
-        sendPreferences();
-      });
+  // Add event listeners
+  const closeButton = popupWindow.querySelector('.shabe-close-button');
+  closeButton.addEventListener('click', () => {
+    console.log('Close button clicked');
+    if (isTranslating) {
+      stopTranslation();
     }
-    if (languageSelect) {
-      languageSelect.value = selectedLanguage;
-      languageSelect.addEventListener('change', (e) => {
-        selectedLanguage = e.target.value;
-        localStorage.setItem('language', selectedLanguage);
-        if (recognition) {
-          recognition.lang = getSpeechLangCode(selectedLanguage);
-          if (isTranslating) {
-            stopTranslation();
-            startTranslation();
-          }
+    if (ws) {
+      ws.close();
+      ws = null;
+    }
+    popupWindow.remove();
+    popupWindow = null;
+
+    // Update button state
+    const button = document.querySelector('.shabe-button-container button');
+    if (button) {
+      button.classList.remove('active');
+    }
+  });
+
+  // Add login button event listener
+  const loginButton = document.getElementById('google-login');
+  loginButton.addEventListener('click', () => {
+    console.log('Login button clicked');
+    window.open('http://localhost:8080/auth/login', 'ShabeLogin', 'width=600,height=600,left=200,top=200');
+  });
+
+  // Listen for auth success message
+  window.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'auth_success') {
+      console.log('Received auth token:', event.data.token);
+
+      // Set auth token globally
+      authToken = event.data.token;
+      
+      // Send token to server to verify
+      fetch(`http://localhost:8080/auth/user?token=${encodeURIComponent(event.data.token)}`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json'
         }
-        sendPreferences();
+      })
+      .then(response => response.json())
+      .then(data => {
+        console.log('Auth check response:', data);
+        if (data.authenticated) {
+          if (data.user.name) {
+            userName = data.user.name;
+            localStorage.setItem('userName', userName);
+            
+            // Update name input if it exists
+            const nameInput = document.querySelector('.shabe-name-input');
+            if (nameInput) {
+              nameInput.value = userName;
+            }
+          }
+
+          // Only call handleAuthSuccess after we've set everything up
+          handleAuthSuccess(event.data.token);
+        }
+      })
+      .catch(error => {
+        console.log('Error checking auth:', error);
       });
     }
+  });
 
-    // Remove the detach button from popup
-    const detachButton = container.querySelector('.shabe-icon-button[aria-label="Detach window"]');
-    if (detachButton) detachButton.remove();
+  let checkingAuth = false;
+  let authCheckCount = 0;
 
-    // Update the popup window title
-    popupWindow.document.title = 'Shabe Translator';
+  function checkAuthStatus() {
+    console.log('Checking auth status... (attempt:', ++authCheckCount, ')');
+    if (checkingAuth) {
+      console.log('Already checking auth, skipping... (attempt:', authCheckCount, ')');
+      return;
+    }
+    checkingAuth = true;
 
-    // Handle window close
-    popupWindow.addEventListener('beforeunload', () => {
-      isDetached = false;
-      const mainContainer = document.querySelector('.shabe-translator');
-      if (mainContainer) mainContainer.style.display = '';
+    fetch('http://localhost:8080/auth/user', {
+      method: 'GET',
+      credentials: 'include',
+      headers: {
+        'Accept': 'application/json'
+      }
+    })
+    .then(response => {
+      console.log('Auth check response:', response.status, '(attempt:', authCheckCount, ')');
+      return response.json();
+    })
+    .then(data => {
+      console.log('Auth check response data:', data, '(attempt:', authCheckCount, ')');
+      checkingAuth = false;
+      
+      if (data.authenticated) {
+        console.log('User is authenticated:', data.user);
+        handleAuthSuccess();
+      }
+    })
+    .catch(error => {
+      console.log('Error checking auth status:', error, '(attempt:', authCheckCount, ')');
+      checkingAuth = false;
     });
-
-    isDetached = true;
-    document.querySelector('.shabe-translator').style.display = 'none';
   }
+
+  // Start checking auth status
+  checkAuthStatus();
+}
+
+// Function to handle successful authentication
+function handleAuthSuccess(token) {
+  console.log('Authentication successful');
+  
+  // Get current room ID
+  currentRoom = extractMeetRoomId(window.location.href);
+  if (!currentRoom) {
+    console.error('No valid room ID found in URL');
+    return;
+  }
+  console.log('Current room:', currentRoom);
+
+  // Show the translator UI
+  const translator = document.querySelector('.shabe-translator');
+  if (translator) {
+    translator.style.display = 'flex';
+  }
+
+  // Remove the popup if it exists
+  if (popupWindow) {
+    popupWindow.remove();
+    popupWindow = null;
+  }
+
+  // Connect to the room
+  connectToRoom();
 }
 
 // Function to create and inject the translator UI
 function createTranslatorUI() {
-  if (uiInitialized) return;
+  console.log('Creating translator UI');
   
-  const container = document.createElement('div');
+  // Load saved preferences
+  userName = localStorage.getItem('userName') || 'Anonymous';
+  selectedLanguage = localStorage.getItem('language') || 'en';
+  
+  // Create the main container if it doesn't exist
+  let container = document.querySelector('.shabe-translator');
+  if (container) {
+    console.log('Translator UI already exists');
+    return;
+  }
+  
+  container = document.createElement('div');
   container.className = 'shabe-translator';
   container.style.display = 'none';
   
-  // Create header with status and buttons
+  // Create header
   const header = document.createElement('div');
   header.className = 'shabe-header';
+  header.style.cssText = `
+    display: flex;
+    align-items: center;
+    padding: 10px;
+    border-bottom: 1px solid #eee;
+    gap: 10px;
+  `;
 
+  // Create status section
   const headerStatus = document.createElement('div');
-  headerStatus.className = 'shabe-header-status';
-  headerStatus.id = 'status';
-  headerStatus.textContent = 'Not connected';
-  
-  const headerControls = document.createElement('div');
-  headerControls.className = 'shabe-header-controls';
+  headerStatus.className = 'shabe-status';
+  headerStatus.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  `;
 
+  const status = document.createElement('span');
+  status.id = 'status';
+  status.textContent = 'Disconnected';
+  status.style.color = '#f44336';
+  headerStatus.appendChild(status);
+
+  // Create language select
+  const languageSelect = document.createElement('select');
+  languageSelect.className = 'shabe-language-select';
+  languageSelect.style.cssText = `
+    padding: 5px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+  `;
+
+  // Create header controls
+  const headerControls = document.createElement('div');
+  headerControls.className = 'shabe-controls';
+  headerControls.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
+  `;
+
+  // Create buttons
   const startButton = document.createElement('button');
   startButton.id = 'start-translation';
   startButton.className = 'shabe-icon-button';
   startButton.innerHTML = '<i class="google-symbols">play_circle</i>';
   startButton.setAttribute('aria-label', 'Start Translation');
-  startButton.addEventListener('click', startTranslation);
-  
-  const stopButton = document.createElement('button');
-  stopButton.id = 'stop-translation';
-  stopButton.className = 'shabe-icon-button';
-  stopButton.innerHTML = '<i class="google-symbols">pause_circle</i>';
-  stopButton.setAttribute('aria-label', 'Pause Translation');
-  stopButton.disabled = true;
-  stopButton.addEventListener('click', stopTranslation);
+  startButton.addEventListener('click', () => {
+    if (!isTranslating) {
+      startTranslation();
+      startButton.innerHTML = '<i class="google-symbols">pause_circle</i>';
+    } else {
+      stopTranslation();
+      startButton.innerHTML = '<i class="google-symbols">play_circle</i>';
+    }
+  });
   
   const detachButton = document.createElement('button');
   detachButton.className = 'shabe-icon-button';
   detachButton.innerHTML = '<i class="google-symbols">open_in_new</i>';
-  detachButton.setAttribute('aria-label', 'Detach window');
+  detachButton.setAttribute('aria-label', 'Open in New Window');
   detachButton.addEventListener('click', createDetachedWindow);
 
+  // Add buttons to controls
   headerControls.appendChild(startButton);
-  headerControls.appendChild(stopButton);
   headerControls.appendChild(detachButton);
-  
+
+  // Add all sections to header
   header.appendChild(headerStatus);
+  header.appendChild(languageSelect);
   header.appendChild(headerControls);
   container.appendChild(header);
+
+  // Create messages container
+  const messages = document.createElement('div');
+  messages.id = 'messages';
+  messages.className = 'shabe-messages';
+  messages.style.cssText = `
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    min-height: 200px;
+    background: white;
+  `;
+  container.appendChild(messages);
   
-  // Create inputs row with name and language
-  const inputsRow = document.createElement('div');
-  inputsRow.className = 'shabe-inputs-row';
-  
-  const nameInput = document.createElement('input');
-  nameInput.type = 'text';
-  nameInput.className = 'shabe-name-input';
-  nameInput.placeholder = 'Enter your name';
-  nameInput.addEventListener('change', (e) => {
-    userName = e.target.value.trim();
-    localStorage.setItem('userName', userName);
-    sendPreferences();
-  });
-  
-  const languageSelect = document.createElement('select');
-  languageSelect.className = 'shabe-language-select';
+  document.body.appendChild(container);
+
+  // Add language options
   const languages = {
     'en': 'English',
     'ja': '日本語',
-    'ko': '한국어',
-    'zh': '中文',
     'es': 'Español',
     'fr': 'Français',
     'de': 'Deutsch'
   };
-  
   Object.entries(languages).forEach(([code, name]) => {
     const option = document.createElement('option');
     option.value = code;
@@ -753,8 +726,8 @@ function createTranslatorUI() {
     languageSelect.appendChild(option);
   });
   
-  languageSelect.addEventListener('change', (e) => {
-    selectedLanguage = e.target.value;
+  languageSelect.addEventListener('change', () => {
+    selectedLanguage = languageSelect.value;
     localStorage.setItem('language', selectedLanguage);
     if (recognition) {
       recognition.lang = getSpeechLangCode(selectedLanguage);
@@ -765,37 +738,6 @@ function createTranslatorUI() {
     }
     sendPreferences();
   });
-  
-  // Add inputs to row
-  inputsRow.appendChild(nameInput);
-  inputsRow.appendChild(languageSelect);
-  container.appendChild(inputsRow);
-  
-  // Create messages container
-  const messages = document.createElement('div');
-  messages.id = 'messages';
-  messages.className = 'shabe-messages';
-  container.appendChild(messages);
-  
-  document.body.appendChild(container);
-  
-  // Load saved preferences
-  const savedName = localStorage.getItem('userName');
-  const savedLanguage = localStorage.getItem('language');
-  
-  if (savedName) {
-    userName = savedName;
-    nameInput.value = savedName;
-  }
-  
-  if (savedLanguage) {
-    selectedLanguage = savedLanguage;
-    languageSelect.value = savedLanguage;
-  }
-  
-  uiInitialized = true;
-  
-  connectToRoom();
 }
 
 // Listen for messages from the background script
@@ -814,28 +756,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Function to initialize the UI
 function initializeUI() {
-  if (uiInitialized) return;
+  console.log('Initializing UI');
   
+  // Check if we're in a meeting room
+  if (!isInMeetingRoom()) {
+    console.log('Not in a valid meeting room, skipping initialization');
+    return;
+  }
+
+  // Create and inject the translator UI
   createTranslatorUI();
   
-  userName = localStorage.getItem('userName') || 'Anonymous';
-  selectedLanguage = localStorage.getItem('language') || 'en';
-  
-  const nameInput = document.querySelector('.shabe-name-input');
-  if (nameInput) {
-    nameInput.value = userName;
-  }
-  
-  const languageSelect = document.querySelector('.shabe-language-select');
-  if (languageSelect) {
-    languageSelect.value = selectedLanguage;
-  }
-  
-  uiInitialized = true;
-  
-  setupSpeechRecognition();
-  
+  // Add the Meet button
   addMeetButtonWithBackoff();
+
+  // Connect to room if we're already authenticated
+  if (authToken) {
+    currentRoom = extractMeetRoomId(window.location.href);
+    if (currentRoom) {
+      connectToRoom();
+    }
+  }
 }
 
 // Watch for URL changes and reinitialize when entering a meeting room
@@ -857,7 +798,6 @@ const urlObserver = new MutationObserver(() => {
     if (existingButton) {
       existingButton.remove();
     }
-    uiInitialized = false;
     
     if (isInMeetingRoom()) {
       console.log('Entered valid meeting room, initializing...');
