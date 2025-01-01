@@ -801,6 +801,12 @@ async function attemptAuth() {
   }
 }
 
+// Function to validate message origin
+async function isValidOrigin(origin) {
+  const serverUrl = await getServerUrl();
+  return origin === serverUrl;
+}
+
 // Listen for messages from the background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Received message:', message);
@@ -833,8 +839,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 // Listen for auth callback
-window.addEventListener('message', (event) => {
-  if (event.origin !== 'http://localhost:8080') {
+window.addEventListener('message', async (event) => {
+  if (event.origin !== await getServerUrl()) {
     return;
   }
 
@@ -873,6 +879,21 @@ window.addEventListener('message', (event) => {
     });
   }
 });
+
+// Add event listeners
+const detachButton = document.querySelector('.shabe-detach-button');
+if (detachButton) {
+  detachButton.addEventListener('click', async () => {
+    console.log('Detach button clicked');
+    
+    // Open login window if not authenticated
+    if (!authToken) {
+      const serverUrl = await getServerUrl();
+      window.open(`${serverUrl}/auth/login`, 'ShabeLogin', 'width=600,height=600,left=200,top=200');
+      return;
+    }
+  });
+}
 
 // Watch for URL changes and reinitialize when entering a meeting room
 const urlObserver = new MutationObserver(() => {
@@ -985,9 +1006,10 @@ function initializeUI() {
 
   // Add login button event listener
   const loginButton = document.getElementById('google-login');
-  loginButton.addEventListener('click', () => {
+  loginButton.addEventListener('click', async () => {
     console.log('Login button clicked');
-    window.open('http://localhost:8080/auth/login', 'ShabeLogin', 'width=600,height=600,left=200,top=200');
+    const serverUrl = await getServerUrl();
+    window.open(`${serverUrl}/auth/login`, 'ShabeLogin', 'width=600,height=600,left=200,top=200');
   });
 
   // Add detach button event listener
@@ -1000,7 +1022,7 @@ function initializeUI() {
   }
 
   // Listen for auth success message
-  window.addEventListener('message', (event) => {
+  window.addEventListener('message', async (event) => {
     if (event.data && event.data.type === 'auth_success') {
       console.log('Received auth token:', event.data.token);
       

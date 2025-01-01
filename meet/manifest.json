@@ -10,7 +10,7 @@
     "activeTab"
   ],
   "host_permissions": [
-    "http://localhost:8080/*",
+    "http://*/*",
     "https://meet.google.com/*"
   ],
   "background": {
@@ -40,7 +40,7 @@
   "web_accessible_resources": [
     {
       "resources": ["google-symbols.woff2"],
-      "matches": ["https://meet.google.com/*", "http://localhost:8080/*"]
+      "matches": ["https://meet.google.com/*", "http://*/*"]
     }
   ]
 }
