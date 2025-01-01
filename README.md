@@ -9,6 +9,8 @@ Shabe is a real-time translation system that helps break down language barriers 
 - Easy-to-use interface integrated directly into Google Meet
 - Instant message display with clear distinction between sent and received translations
 - Manual control over translation with Start/Pause functionality
+- Secure Google authentication with token persistence
+- Detachable translation window for flexible viewing
 
 ## Components
 
@@ -34,24 +36,31 @@ cd shabe
 
 ### 2. Translation Server
 
-The WebSocket server handles the translation requests and manages room connections.
+The WebSocket server handles authentication, translation requests, and manages room connections.
 
 #### Prerequisites
 
 - Go 1.21 or later
 - Docker (optional, for containerized deployment)
 - OpenAI API Key
+- Google OAuth2 Credentials
 
 #### Environment Variables
 
 - `OPENAI_API_KEY` (required): Your OpenAI API key for translation
+- `GOOGLE_CLIENT_ID` (required): Your Google OAuth client ID
+- `GOOGLE_CLIENT_SECRET` (required): Your Google OAuth client secret
+- `OAUTH_REDIRECT_URL` (required): OAuth redirect URL (e.g., http://localhost:8080/auth/callback)
 - `PORT` (optional): Server port number (default: 8080)
 
 #### Running Locally
 
-1. Set your OpenAI API key:
+1. Set your environment variables:
 ```bash
 export OPENAI_API_KEY=your_api_key_here
+export GOOGLE_CLIENT_ID=your_client_id_here
+export GOOGLE_CLIENT_SECRET=your_client_secret_here
+export OAUTH_REDIRECT_URL=http://localhost:8080/auth/callback
 ```
 
 2. Start the server:
@@ -70,17 +79,23 @@ docker build -t shabe .
 
 2. Run the container:
 ```bash
-docker run -p 8080:8080 -e OPENAI_API_KEY=your_api_key_here shabe
+docker run -p 8080:8080 \
+  -e OPENAI_API_KEY=your_api_key_here \
+  -e GOOGLE_CLIENT_ID=your_client_id_here \
+  -e GOOGLE_CLIENT_SECRET=your_client_secret_here \
+  -e OAUTH_REDIRECT_URL=http://localhost:8080/auth/callback \
+  shabe
 ```
 
 ## Usage
 
 1. Join a Google Meet call
 2. Click the Shabe extension icon in your Chrome toolbar to show the translator
-3. Select your preferred language from the dropdown
-4. Click "Start Translation" to begin capturing and translating speech
-5. Click "Pause Translation" when you want to stop
+3. If not signed in, click "Sign in with Google" and complete the authentication
+4. Select your preferred language from the dropdown
+5. Click the microphone icon to start/stop translation
 6. Translations will appear in the message window in real-time
+7. (Optional) Click the detach icon to open the translator in a separate window
 
 ## Development
 
@@ -94,7 +109,19 @@ docker run -p 8080:8080 -e OPENAI_API_KEY=your_api_key_here shabe
 ### Server Structure
 
 - `main.go` - Main server implementation
+- `auth/` - Authentication handlers and middleware
+- `chat/` - WebSocket and room management
+- `config/` - Configuration management
 - `go.mod` & `go.sum` - Go module dependencies
+
+## Authentication
+
+Shabe uses Google OAuth2 for secure user authentication:
+
+1. Users sign in with their Google account
+2. Authentication tokens are securely stored and automatically refreshed
+3. All WebSocket connections require valid authentication
+4. Tokens expire after 24 hours for security
 
 ## Contributing
 
