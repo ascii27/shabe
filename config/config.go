@@ -2,44 +2,68 @@ package config
 
 import (
 	"fmt"
-	"gopkg.in/yaml.v2"
 	"os"
+	"strconv"
 )
 
 type Config struct {
-	OpenAIApiKey string `yaml:"openai_api_key"`
-	Server       struct {
-		Port int    `yaml:"port"`
-		Host string `yaml:"host"`
-	} `yaml:"server"`
-	OAuth struct {
-		ClientID     string `yaml:"client_id"`
-		ClientSecret string `yaml:"client_secret"`
-		RedirectURL  string `yaml:"redirect_url"`
-	} `yaml:"oauth"`
+	OpenAIApiKey  string
+	Server        ServerConfig
+	OAuth         OAuthConfig
 }
 
-func LoadConfig(configPath string) (*Config, error) {
-	// If configPath is empty, try to find config.yaml in the current directory
-	if configPath == "" {
-		configPath = "config.yaml"
+type ServerConfig struct {
+	Port int
+	Host string
+}
+
+type OAuthConfig struct {
+	ClientID     string
+	ClientSecret string
+	RedirectURL  string
+}
+
+// LoadConfig loads configuration from environment variables
+func LoadConfig() (*Config, error) {
+	config := &Config{}
+
+	// Required variables
+	config.OpenAIApiKey = os.Getenv("OPENAI_API_KEY")
+	if config.OpenAIApiKey == "" {
+		return nil, fmt.Errorf("OPENAI_API_KEY environment variable is required")
 	}
 
-	file, err := os.ReadFile(configPath)
-	if err != nil {
-		return nil, fmt.Errorf("error reading config file: %v", err)
+	config.OAuth.ClientID = os.Getenv("GOOGLE_CLIENT_ID")
+	if config.OAuth.ClientID == "" {
+		return nil, fmt.Errorf("GOOGLE_CLIENT_ID environment variable is required")
 	}
 
-	var config Config
-	err = yaml.Unmarshal(file, &config)
-	if err != nil {
-		return nil, fmt.Errorf("error parsing config file: %v", err)
+	config.OAuth.ClientSecret = os.Getenv("GOOGLE_CLIENT_SECRET")
+	if config.OAuth.ClientSecret == "" {
+		return nil, fmt.Errorf("GOOGLE_CLIENT_SECRET environment variable is required")
 	}
 
-	// Override with environment variable if present
-	if envKey := os.Getenv("OPENAI_API_KEY"); envKey != "" {
-		config.OpenAIApiKey = envKey
+	config.OAuth.RedirectURL = os.Getenv("OAUTH_REDIRECT_URL")
+	if config.OAuth.RedirectURL == "" {
+		return nil, fmt.Errorf("OAUTH_REDIRECT_URL environment variable is required")
 	}
 
-	return &config, nil
+	// Optional variables with defaults
+	config.Server.Host = os.Getenv("HOST")
+	if config.Server.Host == "" {
+		config.Server.Host = "localhost"
+	}
+
+	portStr := os.Getenv("PORT")
+	if portStr == "" {
+		config.Server.Port = 8080
+	} else {
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid PORT value: %v", err)
+		}
+		config.Server.Port = port
+	}
+
+	return config, nil
 }

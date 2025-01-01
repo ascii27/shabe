@@ -7,7 +7,7 @@ require (
 	github.com/gorilla/websocket v1.5.1
 	github.com/sashabaranov/go-openai v1.36.0
 	golang.org/x/oauth2 v0.24.0
-	gopkg.in/yaml.v2 v2.4.0
+	github.com/golang-jwt/jwt v3.2.2+incompatible
 )
 
 require (

@@ -8,6 +8,12 @@ services:
     ports:
       - "8080:8080"
     environment:
+      # Required variables
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - OAUTH_REDIRECT_URL=${OAUTH_REDIRECT_URL}
+      
+      # Optional variables with defaults
       - PORT=8080
-      # Uncomment and set your OpenAI API key if you want translation support
-      # - OPENAI_API_KEY=your_api_key_here
+      - HOST=0.0.0.0  # Use 0.0.0.0 in Docker to accept connections from outside the container

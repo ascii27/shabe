@@ -54,9 +54,9 @@ func corsMiddleware(next http.Handler) http.Handler {
 
 func main() {
 	// Load configuration
-	cfg, err := config.LoadConfig("")
+	cfg, err := config.LoadConfig()
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		log.Fatalf("Error loading config: %v", err)
 	}
 
 	// Initialize managers
