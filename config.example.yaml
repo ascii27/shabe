@@ -1,0 +1,10 @@
+server:
+  port: 8080
+  host: localhost
+
+oauth:
+  client_id: your-google-client-id
+  client_secret: your-google-client-secret
+  redirect_url: http://localhost:8080/auth/callback
+
+openai_api_key: your-openai-api-key
