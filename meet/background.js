@@ -37,6 +37,17 @@ chrome.action.onClicked.addListener(async (tab) => {
   }
 });
 
+// Function to get server URL from storage
+async function getServerUrl() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['serverAddress', 'serverPort'], (items) => {
+      const address = items.serverAddress || 'localhost';
+      const port = items.serverPort || 8080;
+      resolve(`http://${address}:${port}`);
+    });
+  });
+}
+
 // Listen for auth success message from options page
 chrome.runtime.onMessage.addListener((message, sender) => {
   if (message.type === 'authSuccess' && message.token) {

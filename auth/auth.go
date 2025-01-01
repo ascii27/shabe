@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
+	"log"
 	"net/http"
 )
 
@@ -70,7 +71,7 @@ func (m *Manager) GetUserInfo(token *oauth2.Token) (*GoogleUser, error) {
 	if err := json.NewDecoder(resp.Body).Decode(&user); err != nil {
 		return nil, fmt.Errorf("failed decoding user info: %v", err)
 	}
-
+	log.Printf("Got user info: %v (for token %v)", user, token.AccessToken)
 	return &user, nil
 }
 
@@ -83,20 +84,20 @@ func (m *Manager) AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Get token from cookie
-		cookie, err := r.Cookie("auth_token")
-		if err != nil {
+		// Get token from header
+		reqToken := m.GetTokenFromRequest(r)
+		if reqToken != "" {
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
 
 		// Verify token
 		token := &oauth2.Token{
-			AccessToken: cookie.Value,
+			AccessToken: reqToken,
 		}
 
 		// Get user info to verify token is valid
-		_, err = m.GetUserInfo(token)
+		_, err := m.GetUserInfo(token)
 		if err != nil {
 			http.Error(w, "Invalid token", http.StatusUnauthorized)
 			return

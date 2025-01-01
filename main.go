@@ -103,7 +103,7 @@ func main() {
 		}
 
 		// Check auth token from URL parameter
-		token := r.URL.Query().Get("token")
+		token := authManager.GetTokenFromRequest(r)
 		if token == "" {
 			log.Printf("No auth token found in URL")
 			http.Redirect(w, r, "/login", http.StatusSeeOther)

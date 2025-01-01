@@ -32,6 +32,7 @@ func (m *Manager) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Return HTML that passes token back to opener
 	w.Header().Set("Content-Type", "text/html")
+	w.Header().Set("Cross-Origin-Opener-Policy", "unsafe-none")
 	fmt.Fprintf(w, `
 		<html>
 		<body>

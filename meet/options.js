@@ -7,7 +7,7 @@ const DEFAULT_SETTINGS = {
 // Function to get server URL based on settings
 async function getServerUrl() {
   return new Promise((resolve) => {
-    chrome.storage.sync.get(['serverAddress', 'serverPort'], (items) => {
+    chrome.storage.local.get(['serverAddress', 'serverPort'], (items) => {
       const address = items.serverAddress || DEFAULT_SETTINGS.serverAddress;
       const port = items.serverPort || DEFAULT_SETTINGS.serverPort;
       resolve(`http://${address}:${port}`);
@@ -56,6 +56,8 @@ async function updateConnectionStatus() {
   const statusIndicator = document.querySelector('.status-indicator');
   const statusText = document.querySelector('.status-text');
   const userInfo = document.querySelector('.user-info');
+  const userText = document.querySelector('.user-text');
+  const signOutButton = document.querySelector('.sign-out-button');
   const authButton = document.querySelector('.auth-button');
 
   // Set to checking state
@@ -63,6 +65,7 @@ async function updateConnectionStatus() {
   statusText.textContent = 'Checking connection...';
   userInfo.style.display = 'none';
   authButton.style.display = 'none';
+  signOutButton.style.display = 'none';
 
   try {
     const existingToken = await getAuthToken();
@@ -90,8 +93,10 @@ async function updateConnectionStatus() {
     statusText.textContent = 'Connected to server';
     
     if (data.user.name) {
-      userInfo.textContent = `Signed in as ${data.user.name}`;
+      userText.textContent = `Signed in as ${data.user.name}`;
       userInfo.style.display = 'block';
+      signOutButton.style.display = 'inline-block';
+      authButton.style.display = 'none';
       chrome.storage.local.set({ userName: data.user.name });
     }
 
@@ -106,6 +111,13 @@ async function updateConnectionStatus() {
     // Clear any existing auth data
     clearAuthToken();
   }
+}
+
+// Function to sign out
+async function handleSignOut() {
+  await chrome.storage.local.remove(['authToken', 'authTokenExpiration', 'userName']);
+  clearAuthToken();
+  updateConnectionStatus();
 }
 
 // Function to save settings
@@ -123,7 +135,7 @@ function saveSettings() {
   }
 
   // Save to Chrome storage
-  chrome.storage.sync.set({
+  chrome.storage.local.set({
     serverAddress: serverAddress,
     serverPort: parseInt(serverPort)
   }, () => {
@@ -150,7 +162,7 @@ function saveSettings() {
 
 // Function to load settings
 function loadSettings() {
-  chrome.storage.sync.get(['serverAddress', 'serverPort'], (items) => {
+  chrome.storage.local.get(['serverAddress', 'serverPort'], (items) => {
     document.getElementById('serverAddress').value = items.serverAddress || DEFAULT_SETTINGS.serverAddress;
     document.getElementById('serverPort').value = items.serverPort || DEFAULT_SETTINGS.serverPort;
   });
@@ -174,6 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Add event listeners
   document.getElementById('save').addEventListener('click', saveSettings);
   document.getElementById('reset').addEventListener('click', resetSettings);
+  document.querySelector('.sign-out-button').addEventListener('click', handleSignOut);
   
   // Handle auth button click
   document.querySelector('.auth-button').addEventListener('click', () => {

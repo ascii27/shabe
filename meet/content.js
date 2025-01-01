@@ -286,43 +286,43 @@ function getSpeechLangCode(lang) {
   return langMap[lang] || 'en-US';
 }
 
+// Function to get server URL from storage
+async function getServerUrl() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['serverAddress', 'serverPort'], (items) => {
+      const address = items.serverAddress || 'localhost';
+      const port = items.serverPort || 8080;
+      resolve(`http://${address}:${port}`);
+    });
+  });
+}
+
 // Function to connect to WebSocket
-function connectToRoom() {
+async function connectToRoom() {
   console.log('Connecting to room:', currentRoom, 'with token:', authToken);
   if (!currentRoom) {
     console.error('Cannot connect: no room ID');
-    const status = document.getElementById('shabe-status');
-    if (status) {
-      status.textContent = 'Error: No room ID';
-      status.style.color = '#f44336';
-    }
     return;
   }
 
-  if (!authToken) {
-    console.error('Cannot connect: no auth token');
-    const status = document.getElementById('shabe-status');
-    if (status) {
-      status.textContent = 'Error: Not authenticated';
-      status.style.color = '#f44336';
-    }
-    return;
+  // Close existing connection if any
+  if (ws) {
+    ws.close();
   }
 
-  // Don't create multiple connections
-  if (ws && ws.readyState !== WebSocket.CLOSED) {
-    console.log('WebSocket already connected or connecting');
-    return;
-  }
-
-  const wsUrl = `ws://localhost:8080/ws?roomId=${encodeURIComponent(currentRoom)}`;
-  console.log('Connecting to websocket:', wsUrl);
-  ws = new WebSocket(wsUrl);
+  // Get server URL from storage
+  const serverUrl = await getServerUrl();
+  const wsUrl = serverUrl.replace('http', 'ws');
+  
+  console.log('Connecting to websocket:', `${wsUrl}/ws?roomId=${currentRoom}`);
+  ws = new WebSocket(`${wsUrl}/ws?roomId=${encodeURIComponent(currentRoom)}`);
 
   // Add auth token to WebSocket handshake
-  ws.onbeforeopen = () => {
-    ws.setRequestHeader('Authorization', `Bearer ${authToken}`);
-  };
+  if (authToken) {
+    ws.onbeforeopen = () => {
+      ws.setRequestHeader('Authorization', `Bearer ${authToken}`);
+    };
+  }
 
   ws.onopen = () => {
     console.log('WebSocket connected');
@@ -774,7 +774,8 @@ async function attemptAuth() {
     try {
       console.log('Existing auth token found');
       // Verify the token by fetching user info
-      const response = await fetch('http://localhost:8080/auth/user', {
+      const serverUrl = await getServerUrl();
+      const response = await fetch(`${serverUrl}/auth/user`, {
         method: 'GET',
         headers: {
           'Accept': 'application/json',
@@ -808,23 +809,25 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log('Received auth success message:', message);
     
     // Fetch user info with the token
-    fetch('http://localhost:8080/auth/user', {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${message.token}`
-      }
-    })
-    .then(response => response.json())
-    .then(async data => {
-      console.log('User info response:', data);
-      if (data.user.name) {
-        await chrome.storage.local.set({ userName: data.user.name });
-      }
-      await handleAuthSuccess(message.token);
-    })
-    .catch(error => {
-      console.error('Error fetching user info:', error);
+    getServerUrl().then(serverUrl => {
+      fetch(`${serverUrl}/auth/user`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${message.token}`
+        }
+      })
+      .then(response => response.json())
+      .then(async data => {
+        console.log('User info response:', data);
+        if (data.user.name) {
+          await chrome.storage.local.set({ userName: data.user.name });
+        }
+        await handleAuthSuccess(message.token);
+      })
+      .catch(error => {
+        console.error('Error fetching user info:', error);
+      });
     });
   }
 });
@@ -837,31 +840,36 @@ window.addEventListener('message', (event) => {
 
   console.log('Received postMessage:', event.data);
 
-  if (event.data.type === 'auth_success' && event.data.token) {
+  if (event.data && event.data.type === 'auth_success' && event.data.token) {
     console.log('Auth success, verifying token');
     
-    fetch('http://localhost:8080/auth/user', {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${event.data.token}`
-      }
-    })
-    .then(response => response.json())
-    .then(async data => {
-      console.log('Auth check response:', data);
-      if (data.authenticated) {
-        if (data.user.name) {
-          userName = data.user.name;
-          await chrome.storage.local.set({ userName: userName });
+    // Set auth token globally
+    authToken = event.data.token;
+    
+    // Send token to server to verify
+    getServerUrl().then(serverUrl => {
+      fetch(`${serverUrl}/auth/user`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${event.data.token}`
         }
-        
-        // Call handleAuthSuccess after verification
-        await handleAuthSuccess(event.data.token);
-      }
-    })
-    .catch(error => {
-      console.error('Error checking auth:', error);
+      })
+      .then(response => response.json())
+      .then(data => {
+        console.log('Auth check response:', data);
+        if (data.authenticated) {
+          if (data.user.name) {
+            chrome.storage.local.set({ userName: data.user.name });
+          }
+          
+          // Call handleAuthSuccess after verification
+          handleAuthSuccess(event.data.token);
+        }
+      })
+      .catch(error => {
+        console.error('Error checking auth:', error);
+      });
     });
   }
 });
@@ -1000,27 +1008,29 @@ function initializeUI() {
       authToken = event.data.token;
       
       // Send token to server to verify
-      fetch(`http://localhost:8080/auth/user`, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': `Bearer ${event.data.token}`
-        }
-      })
-      .then(response => response.json())
-      .then(data => {
-        console.log('Auth check response:', data);
-        if (data.authenticated) {
-          if (data.user.name) {
-            chrome.storage.local.set({ userName: data.user.name });
+      getServerUrl().then(serverUrl => {
+        fetch(`${serverUrl}/auth/user`, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${event.data.token}`
           }
-          
-          // Call handleAuthSuccess after verification
-          handleAuthSuccess(event.data.token);
-        }
-      })
-      .catch(error => {
-        console.error('Error checking auth:', error);
+        })
+        .then(response => response.json())
+        .then(data => {
+          console.log('Auth check response:', data);
+          if (data.authenticated) {
+            if (data.user.name) {
+              chrome.storage.local.set({ userName: data.user.name });
+            }
+            
+            // Call handleAuthSuccess after verification
+            handleAuthSuccess(event.data.token);
+          }
+        })
+        .catch(error => {
+          console.error('Error checking auth:', error);
+        });
       });
     }
   });
