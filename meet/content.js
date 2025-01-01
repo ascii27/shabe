@@ -756,7 +756,7 @@ async function handleAuthSuccess(token) {
   }
 
   // Connect to the room
-  connectToRoom(currentRoom);
+  connectToRoom();
 }
 
 // Function to attempt authentication
