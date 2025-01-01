@@ -410,7 +410,7 @@ function displayMessage(text, isSelf = false, name = 'Anonymous') {
   const messageDiv = document.createElement('div');
   messageDiv.className = `shabe-message ${isSelf ? 'self' : 'other'}`;
   messageDiv.style.cssText = `
-    margin: 5px 0px 0px auto;
+    margin: 5px 0px 0px 5px;
     padding: 5px 8px;
     border-radius: 8px;
     max-width: 90%;
@@ -524,7 +524,7 @@ function createDetachedWindow() {
           flex-grow: 1;
           overflow-y: auto;
           padding: 5px 8px;
-          margin: 5px 0px 0px auto; 
+          margin: 5px 0px 0px 5px; 
         }
         .message {
           margin-bottom: 10px;
