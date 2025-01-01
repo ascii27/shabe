@@ -415,125 +415,177 @@ function sendMessage(text) {
 
 // Function to create detached window
 function createDetachedWindow() {
-  if (popupWindow) {
-    console.log('Popup window already exists');
+  if (popupWindow && !popupWindow.closed) {
+    popupWindow.focus();
     return;
   }
 
-  // Create floating container
-  popupWindow = document.createElement('div');
-  popupWindow.style.position = 'fixed';
-  popupWindow.style.top = '20px';
-  popupWindow.style.right = '20px';
-  popupWindow.style.zIndex = '9999';
-
-  // Clone the translator UI structure
-  const originalTranslator = document.querySelector('.shabe-translator');
-  if (!originalTranslator) {
-    console.error('Original translator UI not found');
+  // Create a new window
+  popupWindow = window.open('', 'ShabeTranslator', 'width=400,height=600,resizable=yes');
+  if (!popupWindow) {
+    console.error('Popup blocked - please allow popups for this site');
     return;
   }
 
-  const translator = originalTranslator.cloneNode(true);
-  translator.style.backgroundColor = 'white';
-  translator.style.boxShadow = '0 2px 10px rgba(0,0,0,0.1)';
-  translator.style.borderRadius = '8px';
-  translator.style.width = '300px';
-  translator.style.maxHeight = '80vh';
-  translator.style.display = 'flex';
+  // Hide the embedded UI
+  const container = document.querySelector('.shabe-container');
+  if (container) {
+    container.style.display = 'none';
+  }
 
-  // Add close button to translator
-  const header = document.createElement('div');
-  header.style.cssText = 'padding: 10px; background-color: #f5f5f5; border-bottom: 1px solid #eee; border-radius: 8px 8px 0 0; display: flex; justify-content: space-between; align-items: center; cursor: move;';
+  // Write the HTML content
+  popupWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Shabe Translator</title>
+      <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined" rel="stylesheet" />
+      <style>
+        body {
+          margin: 0;
+          font-family: Arial, sans-serif;
+          display: flex;
+          flex-direction: column;
+          height: 100vh;
+          background: white;
+        }
+        .shabe-translator {
+          display: flex;
+          flex-direction: column;
+          height: 100%;
+          background: white;
+        }
+        .shabe-header-buttons {
+          padding: 10px;
+          border-bottom: 1px solid #eee;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        }
+        .shabe-messages {
+          flex-grow: 1;
+          overflow-y: auto;
+          padding: 15px;
+        }
+        .message {
+          margin-bottom: 10px;
+          padding: 8px;
+          border-radius: 4px;
+          max-width: 80%;
+        }
+        .message.sent {
+          background-color: #e3f2fd;
+          margin-left: auto;
+        }
+        .message.received {
+          background-color: #f5f5f5;
+          margin-right: auto;
+        }
+        button {
+          cursor: pointer;
+        }
+        .google-symbols {
+          font-family: 'Material Symbols Outlined';
+          font-weight: normal;
+          font-style: normal;
+          font-size: 24px;
+          line-height: 1;
+          letter-spacing: normal;
+          text-transform: none;
+          display: inline-block;
+          white-space: nowrap;
+          word-wrap: normal;
+          direction: ltr;
+          -webkit-font-feature-settings: 'liga';
+          -webkit-font-smoothing: antialiased;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="shabe-translator">
+        <div class="shabe-header-buttons">
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <span id="shabe-status">Disconnected</span>
+            <select class="shabe-language-select" style="padding: 5px; border-radius: 4px; border: 1px solid #ddd;">
+              <option value="en">English</option>
+              <option value="ja">日本語</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+              <option value="de">Deutsch</option>
+              <option value="pt">Português</option>
+              <option value="ko">한국어</option>
+              <option value="zh">中文</option>
+            </select>
+            <button class="shabe-mic-button" style="padding: 8px; border: none; background: none;">
+              <span class="google-symbols">translate</span>
+            </button>
+          </div>
+        </div>
+        <div id="messages" class="shabe-messages"></div>
+      </div>
+    </body>
+    </html>
+  `);
+
+  // Set up event listeners in the popup
+  const popup = popupWindow.document;
   
-  const title = document.createElement('span');
-  title.textContent = 'Shabe Translator';
-  
-  const closeButton = document.createElement('button');
-  closeButton.innerHTML = '×';
-  closeButton.style.cssText = 'background: none; border: none; font-size: 20px; cursor: pointer;';
-  
-  header.appendChild(title);
-  header.appendChild(closeButton);
+  // Set up language select
+  const languageSelect = popup.querySelector('.shabe-language-select');
+  if (languageSelect) {
+    languageSelect.value = selectedLanguage;
+    languageSelect.addEventListener('change', (e) => {
+      selectedLanguage = e.target.value;
+      localStorage.setItem('language', selectedLanguage);
+      if (ws) {
+        sendPreferences();
+      }
+    });
+  }
 
-  // Add header before the existing content
-  translator.insertBefore(header, translator.firstChild);
+  // Set up mic button
+  const micButton = popup.querySelector('.shabe-mic-button');
+  if (micButton) {
+    micButton.addEventListener('click', () => {
+      if (isTranslating) {
+        stopTranslation();
+        micButton.querySelector('.google-symbols').textContent = 'play_circle';
+        micButton.style.color = '#000';
+      } else {
+        startTranslation();
+        micButton.querySelector('.google-symbols').textContent = 'stop_circle';
+        micButton.style.color = '#1a73e8';
+      }
+    });
+  }
 
-  // Add the translator to the popup window
-  popupWindow.appendChild(translator);
-  document.body.appendChild(popupWindow);
+  // Sync existing messages
+  const sourceMessages = document.getElementById('messages');
+  const targetMessages = popup.getElementById('messages');
+  if (sourceMessages && targetMessages) {
+    targetMessages.innerHTML = sourceMessages.innerHTML;
+  }
 
-  // Add close button event listener
-  closeButton.addEventListener('click', () => {
-    if (ws) {
-      ws.close();
-      ws = null;
-    }
-    popupWindow.remove();
+  // Set up message syncing
+  const observer = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (mutation.type === 'childList' && !popupWindow.closed) {
+        targetMessages.innerHTML = sourceMessages.innerHTML;
+      }
+    });
+  });
+
+  observer.observe(sourceMessages, { childList: true });
+
+  // Handle window close
+  popupWindow.addEventListener('beforeunload', () => {
+    observer.disconnect();
     popupWindow = null;
-
-    // Update button state
-    const button = document.querySelector('.shabe-button-container button');
-    if (button) {
-      button.classList.remove('active');
+    // Show the embedded UI again
+    if (container) {
+      container.style.display = 'flex';
     }
   });
-
-  // Make the window draggable
-  let isDragging = false;
-  let currentX;
-  let currentY;
-  let initialX;
-  let initialY;
-
-  header.addEventListener('mousedown', (e) => {
-    if (e.target === closeButton) {
-      return;
-    }
-    isDragging = true;
-    initialX = e.clientX - popupWindow.offsetLeft;
-    initialY = e.clientY - popupWindow.offsetTop;
-  });
-
-  document.addEventListener('mousemove', (e) => {
-    if (isDragging) {
-      e.preventDefault();
-      currentX = e.clientX - initialX;
-      currentY = e.clientY - initialY;
-      popupWindow.style.left = `${currentX}px`;
-      popupWindow.style.top = `${currentY}px`;
-      popupWindow.style.right = 'auto';
-    }
-  });
-
-  document.addEventListener('mouseup', () => {
-    isDragging = false;
-  });
-
-  // Show appropriate view based on auth status
-  const loginView = translator.querySelector('.shabe-login');
-  const translationView = translator.querySelector('.shabe-translation-ui');
-  
-  if (authToken) {
-    if (loginView) loginView.style.display = 'none';
-    if (translationView) {
-      translationView.style.display = 'flex';
-      // Set up translation view event listeners for the translation view
-      setupTranslationViewListeners(translationView);
-    }
-  } else {
-    if (loginView) loginView.style.display = 'block';
-    if (translationView) translationView.style.display = 'none';
-
-    // Add login button event listener
-    const loginButton = translator.querySelector('#google-login');
-    if (loginButton) {
-      loginButton.addEventListener('click', () => {
-        console.log('Login button clicked');
-        window.open('http://localhost:8080/auth/login', 'ShabeLogin', 'width=600,height=600,left=200,top=200');
-      });
-    }
-  }
 }
 
 // Helper function to set up translation view event listeners
@@ -572,6 +624,14 @@ function setupTranslationViewListeners(container) {
       }
     });
   }
+
+  // Add detach button event listener
+  const detachButton = container.querySelector('.shabe-detach-button');
+  if (detachButton) {
+    detachButton.addEventListener('click', () => {
+      createDetachedWindow();
+    });
+  }
 }
 
 // Function to handle successful authentication
@@ -595,12 +655,8 @@ function handleAuthSuccess(token) {
     if (loginView) loginView.style.display = 'none';
     if (translationView) {
       translationView.style.display = 'flex';
-      // Set up translation view event listeners for the translation view
       setupTranslationViewListeners(translationView);
     }
-
-    // Make sure the translator is visible
-    translator.style.display = 'flex';
   }
 
   // Connect to the room
@@ -876,10 +932,10 @@ function initializeUI() {
           <option value="zh">中文</option>
         </select>
         <button class="shabe-mic-button" style="padding: 8px; border: none; background: none; cursor: pointer;">
-          <span class="google-symbols" style="font-size: 24px;">play_circle</span>
+          <span class="google-symbols">play_circle</span>
         </button>
         <button class="shabe-detach-button" style="padding: 8px; border: none; background: none; cursor: pointer;">
-          <span class="google-symbols" style="font-size: 24px;">open_in_new</span>
+          <span class="google-symbols">open_in_new</span>
         </button>
       </div>
     </div>
