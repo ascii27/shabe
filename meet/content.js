@@ -14,33 +14,38 @@ let maxRetryAttempts = 5;
 let authToken = null;
 
 // Token management functions
-function setAuthToken(token) {
+async function setAuthToken(token) {
   const expirationTime = Date.now() + (24 * 60 * 60 * 1000); // 24 hours from now
-  localStorage.setItem('shabeAuthToken', token);
-  localStorage.setItem('shabeAuthExpiration', expirationTime.toString());
+  await chrome.storage.local.set({
+    authToken: token,
+    authTokenExpiration: expirationTime
+  });
   authToken = token;
 }
 
-function getAuthToken() {
-  const token = localStorage.getItem('shabeAuthToken');
-  const expiration = parseInt(localStorage.getItem('shabeAuthExpiration'));
-  
-  if (!token || !expiration) {
-    return null;
-  }
+async function getAuthToken() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(['authToken', 'authTokenExpiration'], (items) => {
+      const { authToken, authTokenExpiration } = items;
+      
+      if (!authToken || !authTokenExpiration) {
+        resolve(null);
+        return;
+      }
 
-  // Check if token has expired
-  if (Date.now() > expiration) {
-    clearAuthToken();
-    return null;
-  }
+      if (Date.now() > parseInt(authTokenExpiration)) {
+        clearAuthToken();
+        resolve(null);
+        return;
+      }
 
-  return token;
+      resolve(authToken);
+    });
+  });
 }
 
 function clearAuthToken() {
-  localStorage.removeItem('shabeAuthToken');
-  localStorage.removeItem('shabeAuthExpiration');
+  chrome.storage.local.remove(['authToken', 'authTokenExpiration', 'userName']);
   authToken = null;
 }
 
@@ -376,18 +381,20 @@ function connectToRoom() {
 function sendPreferences() {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
-  let language = localStorage.getItem('language')
-  let name = localStorage.getItem('userName')
-  if (!language) language = 'en'
-  if (!name) name = 'Anonymous'
+  chrome.storage.local.get(['language', 'userName'], (items) => {
+    let language = items.language
+    let name = items.userName
+    if (!language) language = 'en'
+    if (!name) name = 'Anonymous'
   
-  console.log('Sending preferences:', { language, name });
+    console.log('Sending preferences:', { language, name });
 
-  ws.send(JSON.stringify({
-    type: 'preferences',
-    language: language,
-    name: name
-  }));
+    ws.send(JSON.stringify({
+      type: 'preferences',
+      language: language,
+      name: name
+    }));
+  });
 }
 
 // Function to display a message
@@ -444,16 +451,23 @@ function sendMessage(text) {
     return;
   }
   
-  const message = {
-    type: 'message',
-    text: text,
-    language: selectedLanguage,
-    name: userName
-  };
+  chrome.storage.local.get(['language', 'userName'], (items) => {
+    let language = items.language
+    let name = items.userName
+    if (!language) language = 'en'
+    if (!name) name = 'Anonymous'
   
-  console.log('Sending websocket message:', message);
-  ws.send(JSON.stringify(message));
-  displayMessage(text, true, userName);
+    const message = {
+      type: 'message',
+      text: text,
+      language: language,
+      name: name
+    };
+  
+    console.log('Sending websocket message:', message);
+    ws.send(JSON.stringify(message));
+    displayMessage(text, true, name);
+  });
 }
 
 // Function to create detached window
@@ -578,29 +592,40 @@ function createDetachedWindow() {
   // Set up language select
   const languageSelect = popup.querySelector('.shabe-language-select');
   if (languageSelect) {
-    languageSelect.value = selectedLanguage;
-    languageSelect.addEventListener('change', (e) => {
-      selectedLanguage = e.target.value;
-      localStorage.setItem('language', selectedLanguage);
-      if (ws) {
-        sendPreferences();
-      }
+    chrome.storage.local.get('language', (items) => {
+      const language = items.language || 'en';
+      languageSelect.value = language;
+      languageSelect.addEventListener('change', (e) => {
+        chrome.storage.local.set({ language: e.target.value });
+        if (ws) {
+          sendPreferences();
+        }
+      });
     });
   }
 
   // Set up mic button
   const micButton = popup.querySelector('.shabe-mic-button');
-  if (micButton) {
+  const micIcon = micButton?.querySelector('.google-symbols');
+  if (micButton && micIcon) {
     micButton.addEventListener('click', () => {
       if (isTranslating) {
         stopTranslation();
-        micButton.querySelector('.google-symbols').textContent = 'mic';
+        micIcon.textContent = 'mic';
         micButton.style.color = '#000';
       } else {
         startTranslation();
-        micButton.querySelector('.google-symbols').textContent = 'mic_off';
+        micIcon.textContent = 'mic_off';
         micButton.style.color = '#1a73e8';
       }
+    });
+  }
+
+  // Add detach button event listener
+  const detachButton = popup.querySelector('.shabe-detach-button');
+  if (detachButton) {
+    detachButton.addEventListener('click', () => {
+      createDetachedWindow();
     });
   }
 
@@ -671,13 +696,15 @@ function setupTranslationViewListeners(container) {
   // Add language select event listener
   const languageSelect = container.querySelector('.shabe-language-select');
   if (languageSelect) {
-    languageSelect.value = selectedLanguage;
-    languageSelect.addEventListener('change', (e) => {
-      selectedLanguage = e.target.value;
-      localStorage.setItem('language', selectedLanguage);
-      if (ws) {
-        sendPreferences();
-      }
+    chrome.storage.local.get('language', (items) => {
+      const language = items.language || 'en';
+      languageSelect.value = language;
+      languageSelect.addEventListener('change', (e) => {
+        chrome.storage.local.set({ language: e.target.value });
+        if (ws) {
+          sendPreferences();
+        }
+      });
     });
   }
 
@@ -708,11 +735,11 @@ function setupTranslationViewListeners(container) {
 }
 
 // Function to handle successful authentication
-function handleAuthSuccess(token) {
+async function handleAuthSuccess(token) {
   console.log('Authentication successful');
   
   // Store the token
-  setAuthToken(token);
+  await setAuthToken(token);
   
   // Get current room ID
   currentRoom = extractMeetRoomId(window.location.href);
@@ -739,10 +766,10 @@ function handleAuthSuccess(token) {
   connectToRoom();
 }
 
-// Function to 
+// Function to attempt authentication
 async function attemptAuth() {
   // Check for existing auth token
-  const existingToken = getAuthToken();
+  const existingToken = await getAuthToken();
   if (existingToken) {
     try {
       console.log('Existing auth token found');
@@ -758,20 +785,19 @@ async function attemptAuth() {
       if (response.ok) {
         const data = await response.json();
         userName = data.user.name;
-        localStorage.setItem('userName', userName);
+        await chrome.storage.local.set({ userName: userName });
         authToken = existingToken;
-        handleAuthSuccess(existingToken);
+        await handleAuthSuccess(existingToken);
         return;
       } else {
         // Token is invalid
-        clearAuthToken();
+        await clearAuthToken();
       }
     } catch (error) {
       console.error('Error checking auth:', error);
-      clearAuthToken();
+      await clearAuthToken();
     }
   }
-
 }
 
 // Listen for messages from the background script
@@ -790,16 +816,52 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
     })
     .then(response => response.json())
-    .then(data => {
+    .then(async data => {
       console.log('User info response:', data);
-      if (data.name) {
-        userName = data.name;
-        localStorage.setItem('userName', userName);
+      if (data.user.name) {
+        await chrome.storage.local.set({ userName: data.user.name });
       }
-      handleAuthSuccess(message.token);
+      await handleAuthSuccess(message.token);
     })
     .catch(error => {
       console.error('Error fetching user info:', error);
+    });
+  }
+});
+
+// Listen for auth callback
+window.addEventListener('message', (event) => {
+  if (event.origin !== 'http://localhost:8080') {
+    return;
+  }
+
+  console.log('Received postMessage:', event.data);
+
+  if (event.data.type === 'auth_success' && event.data.token) {
+    console.log('Auth success, verifying token');
+    
+    fetch('http://localhost:8080/auth/user', {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${event.data.token}`
+      }
+    })
+    .then(response => response.json())
+    .then(async data => {
+      console.log('Auth check response:', data);
+      if (data.authenticated) {
+        if (data.user.name) {
+          userName = data.user.name;
+          await chrome.storage.local.set({ userName: userName });
+        }
+        
+        // Call handleAuthSuccess after verification
+        await handleAuthSuccess(event.data.token);
+      }
+    })
+    .catch(error => {
+      console.error('Error checking auth:', error);
     });
   }
 });
@@ -950,8 +1012,7 @@ function initializeUI() {
         console.log('Auth check response:', data);
         if (data.authenticated) {
           if (data.user.name) {
-            userName = data.user.name;
-            localStorage.setItem('userName', userName);
+            chrome.storage.local.set({ userName: data.user.name });
           }
           
           // Call handleAuthSuccess after verification

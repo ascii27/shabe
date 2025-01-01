@@ -36,3 +36,16 @@ chrome.action.onClicked.addListener(async (tab) => {
     console.log('Not on Google Meet page');
   }
 });
+
+// Listen for auth success message from options page
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message.type === 'authSuccess' && message.token) {
+    console.log('Received auth success message in background');
+    
+    // Broadcast the token to all extension pages
+    chrome.runtime.sendMessage({
+      type: 'authSuccess',
+      token: message.token
+    });
+  }
+});

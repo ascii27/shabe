@@ -5,8 +5,8 @@
   "description": "Real-time translation for Google Meet",
   "permissions": [
     "scripting",
-    "tabs",
     "storage",
+    "tabs",
     "activeTab"
   ],
   "host_permissions": [
@@ -36,6 +36,7 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
+  "options_page": "options.html",
   "web_accessible_resources": [
     {
       "resources": ["google-symbols.woff2"],
