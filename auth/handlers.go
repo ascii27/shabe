@@ -61,9 +61,13 @@ func (m *Manager) LogoutHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetTokenFromRequest extracts the token from query parameter
+// GetTokenFromRequest extracts the token from Authorization header
 func (m *Manager) GetTokenFromRequest(r *http.Request) string {
-	return r.URL.Query().Get("token")
+    authHeader := r.Header.Get("Authorization")
+    if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+        return authHeader[7:]
+    }
+    return ""
 }
 
 // UserInfoHandler returns the user's info

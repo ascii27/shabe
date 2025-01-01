@@ -13,6 +13,37 @@ let retryAttempt = 0;
 let maxRetryAttempts = 5;
 let authToken = null;
 
+// Token management functions
+function setAuthToken(token) {
+  const expirationTime = Date.now() + (24 * 60 * 60 * 1000); // 24 hours from now
+  localStorage.setItem('shabeAuthToken', token);
+  localStorage.setItem('shabeAuthExpiration', expirationTime.toString());
+  authToken = token;
+}
+
+function getAuthToken() {
+  const token = localStorage.getItem('shabeAuthToken');
+  const expiration = parseInt(localStorage.getItem('shabeAuthExpiration'));
+  
+  if (!token || !expiration) {
+    return null;
+  }
+
+  // Check if token has expired
+  if (Date.now() > expiration) {
+    clearAuthToken();
+    return null;
+  }
+
+  return token;
+}
+
+function clearAuthToken() {
+  localStorage.removeItem('shabeAuthToken');
+  localStorage.removeItem('shabeAuthExpiration');
+  authToken = null;
+}
+
 // Function to extract room ID from Google Meet URL
 function extractMeetRoomId(url) {
   const meetRegex = /^https:\/\/meet\.google\.com\/([a-z0-9]{3}-[a-z0-9]{4}-[a-z0-9]{3})(?:\?.*)?$/;
@@ -279,9 +310,14 @@ function connectToRoom() {
     return;
   }
 
-  const wsUrl = `ws://localhost:8080/ws?token=${encodeURIComponent(authToken)}&roomId=${encodeURIComponent(currentRoom)}`;
+  const wsUrl = `ws://localhost:8080/ws?roomId=${encodeURIComponent(currentRoom)}`;
   console.log('Connecting to websocket:', wsUrl);
   ws = new WebSocket(wsUrl);
+
+  // Add auth token to WebSocket handshake
+  ws.onbeforeopen = () => {
+    ws.setRequestHeader('Authorization', `Bearer ${authToken}`);
+  };
 
   ws.onopen = () => {
     console.log('WebSocket connected');
@@ -339,11 +375,18 @@ function connectToRoom() {
 // Function to send preferences to the server
 function sendPreferences() {
   if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+  let language = localStorage.getItem('language')
+  let name = localStorage.getItem('userName')
+  if (!language) language = 'en'
+  if (!name) name = 'Anonymous'
   
+  console.log('Sending preferences:', { language, name });
+
   ws.send(JSON.stringify({
     type: 'preferences',
-    language: selectedLanguage,
-    name: userName
+    language: language,
+    name: name
   }));
 }
 
@@ -360,10 +403,10 @@ function displayMessage(text, isSelf = false, name = 'Anonymous') {
   const messageDiv = document.createElement('div');
   messageDiv.className = `shabe-message ${isSelf ? 'self' : 'other'}`;
   messageDiv.style.cssText = `
-    margin: 5px 0;
-    padding: 8px;
+    margin: 5px 0px 0px auto;
+    padding: 5px;
     border-radius: 8px;
-    max-width: 80%;
+    max-width: 90%;
     ${isSelf ? 'margin-left: auto; background: #E3F2FD;' : 'margin-right: auto; background: #F5F5F5;'}
   `;
 
@@ -454,9 +497,10 @@ function createDetachedWindow() {
           flex-direction: column;
           height: 100%;
           background: white;
+          padding: 5px;
         }
         .shabe-header-buttons {
-          padding: 10px;
+          padding: 0px 10px 0px 10px;
           border-bottom: 1px solid #eee;
           display: flex;
           justify-content: space-between;
@@ -465,7 +509,8 @@ function createDetachedWindow() {
         .shabe-messages {
           flex-grow: 1;
           overflow-y: auto;
-          padding: 15px;
+          padding: 5px;
+          margin: 5px 0px 0px auto; 
         }
         .message {
           margin-bottom: 10px;
@@ -517,7 +562,7 @@ function createDetachedWindow() {
               <option value="zh">中文</option>
             </select>
             <button class="shabe-mic-button" style="padding: 8px; border: none; background: none;">
-              <span class="google-symbols">play_circle</span>
+              <span class="google-symbols">translate</span>
             </button>
           </div>
         </div>
@@ -549,11 +594,11 @@ function createDetachedWindow() {
     micButton.addEventListener('click', () => {
       if (isTranslating) {
         stopTranslation();
-        micButton.querySelector('.google-symbols').textContent = 'play_circle';
+        micButton.querySelector('.google-symbols').textContent = 'mic';
         micButton.style.color = '#000';
       } else {
         startTranslation();
-        micButton.querySelector('.google-symbols').textContent = 'stop_circle';
+        micButton.querySelector('.google-symbols').textContent = 'mic_off';
         micButton.style.color = '#1a73e8';
       }
     });
@@ -566,8 +611,16 @@ function createDetachedWindow() {
     targetMessages.innerHTML = sourceMessages.innerHTML;
   }
 
+  // Sync initial status
+  const sourceStatus = document.getElementById('shabe-status');
+  const targetStatus = popup.getElementById('shabe-status');
+  if (sourceStatus && targetStatus) {
+    targetStatus.textContent = sourceStatus.textContent;
+    targetStatus.style.color = sourceStatus.style.color;
+  }
+
   // Set up message syncing
-  const observer = new MutationObserver((mutations) => {
+  const messageObserver = new MutationObserver((mutations) => {
     mutations.forEach((mutation) => {
       if (mutation.type === 'childList' && !popupWindow.closed) {
         targetMessages.innerHTML = sourceMessages.innerHTML;
@@ -575,11 +628,31 @@ function createDetachedWindow() {
     });
   });
 
-  observer.observe(sourceMessages, { childList: true });
+  // Set up status syncing
+  const statusObserver = new MutationObserver((mutations) => {
+    mutations.forEach((mutation) => {
+      if (!popupWindow.closed && targetStatus) {
+        if (mutation.type === 'characterData') {
+          targetStatus.textContent = sourceStatus.textContent;
+        } else if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+          targetStatus.style.color = sourceStatus.style.color;
+        }
+      }
+    });
+  });
+
+  messageObserver.observe(sourceMessages, { childList: true });
+  statusObserver.observe(sourceStatus, { 
+    characterData: true, 
+    attributes: true, 
+    childList: true,
+    subtree: true 
+  });
 
   // Handle window close
   popupWindow.addEventListener('beforeunload', () => {
-    observer.disconnect();
+    messageObserver.disconnect();
+    statusObserver.disconnect();
     popupWindow = null;
     // Show the embedded UI again
     if (container) {
@@ -615,11 +688,11 @@ function setupTranslationViewListeners(container) {
     micButton.addEventListener('click', () => {
       if (isTranslating) {
         stopTranslation();
-        micIcon.textContent = 'play_circle';
+        micIcon.textContent = 'mic';
         micButton.style.color = '#000';
       } else {
         startTranslation();
-        micIcon.textContent = 'stop_circle';
+        micIcon.textContent = 'mic_off';
         micButton.style.color = '#1a73e8';
       }
     });
@@ -637,6 +710,9 @@ function setupTranslationViewListeners(container) {
 // Function to handle successful authentication
 function handleAuthSuccess(token) {
   console.log('Authentication successful');
+  
+  // Store the token
+  setAuthToken(token);
   
   // Get current room ID
   currentRoom = extractMeetRoomId(window.location.href);
@@ -663,219 +739,104 @@ function handleAuthSuccess(token) {
   connectToRoom();
 }
 
-// Function to create and inject the translator UI
-function createTranslatorUI() {
-  console.log('Creating translator UI');
-  
-  // Load saved preferences
-  userName = localStorage.getItem('userName') || 'Anonymous';
-  selectedLanguage = localStorage.getItem('language') || 'en';
-  
-  // Create the main container if it doesn't exist
-  let container = document.querySelector('.shabe-translator');
-  if (container) {
-    console.log('Translator UI already exists');
-    return;
-  }
-  
-  container = document.createElement('div');
-  container.className = 'shabe-translator';
-  container.style.display = 'none';
-  
-  // Create header
-  const header = document.createElement('div');
-  header.className = 'shabe-header';
-  header.style.cssText = `
-    display: flex;
-    align-items: center;
-    padding: 10px;
-    border-bottom: 1px solid #eee;
-    gap: 10px;
-  `;
-
-  // Create status section
-  const headerStatus = document.createElement('div');
-  headerStatus.className = 'shabe-status';
-  headerStatus.style.cssText = `
-    display: flex;
-    align-items: center;
-    gap: 5px;
-  `;
-
-  const status = document.createElement('span');
-  status.id = 'status';
-  status.textContent = 'Disconnected';
-  status.style.color = '#f44336';
-  headerStatus.appendChild(status);
-
-  // Create language select
-  const languageSelect = document.createElement('select');
-  languageSelect.className = 'shabe-language-select';
-  languageSelect.style.cssText = `
-    padding: 5px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 14px;
-  `;
-
-  // Create header controls
-  const headerControls = document.createElement('div');
-  headerControls.className = 'shabe-controls';
-  headerControls.style.cssText = `
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-left: auto;
-  `;
-
-  // Create buttons
-  const startButton = document.createElement('button');
-  startButton.id = 'start-translation';
-  startButton.className = 'shabe-icon-button';
-  startButton.innerHTML = '<i class="google-symbols">play_circle</i>';
-  startButton.setAttribute('aria-label', 'Start Translation');
-  startButton.addEventListener('click', () => {
-    if (!isTranslating) {
-      startTranslation();
-      startButton.innerHTML = '<i class="google-symbols">stop_circle</i>';
-    } else {
-      stopTranslation();
-      startButton.innerHTML = '<i class="google-symbols">play_circle</i>';
-    }
-  });
-  
-  const detachButton = document.createElement('button');
-  detachButton.className = 'shabe-icon-button';
-  detachButton.innerHTML = '<i class="google-symbols">open_in_new</i>';
-  detachButton.setAttribute('aria-label', 'Open in New Window');
-  detachButton.addEventListener('click', createDetachedWindow);
-
-  // Add buttons to controls
-  headerControls.appendChild(startButton);
-  headerControls.appendChild(detachButton);
-
-  // Add all sections to header
-  header.appendChild(headerStatus);
-  header.appendChild(languageSelect);
-  header.appendChild(headerControls);
-  container.appendChild(header);
-
-  // Create messages container
-  const messages = document.createElement('div');
-  messages.id = 'messages';
-  messages.className = 'shabe-messages';
-  messages.style.cssText = `
-    flex: 1;
-    overflow-y: auto;
-    padding: 10px;
-    display: flex;
-    flex-direction: column;
-    min-height: 200px;
-    background: white;
-  `;
-  container.appendChild(messages);
-  
-  document.body.appendChild(container);
-
-  // Add language options
-  const languages = {
-    'en': 'English - ABC',
-    'es': 'Español - ABC',
-    'fr': 'Français - ABC',
-    'de': 'Deutsch - ABC',
-    'it': 'Italiano - ABC',
-    'pt': 'Português - ABC',
-    'ru': 'Русский - АБВ',
-    'ja': '日本語 - あア',
-    'ko': '한국어 - 가나다',
-    'zh': '中文 - 汉字'
-  };
-  Object.entries(languages).forEach(([code, name]) => {
-    const option = document.createElement('option');
-    option.value = code;
-    option.textContent = name;
-    languageSelect.appendChild(option);
-  });
-  
-  languageSelect.addEventListener('change', () => {
-    selectedLanguage = languageSelect.value;
-    localStorage.setItem('language', selectedLanguage);
-    if (ws) {
-      sendPreferences();
-    }
-  });
-
-  // Listen for auth success message
-  window.addEventListener('message', (event) => {
-    if (event.data && event.data.type === 'auth_success') {
-      console.log('Received auth token:', event.data.token);
-      
-      // Set auth token globally
-      authToken = event.data.token;
-      
-      // Send token to server to verify
-      fetch(`http://localhost:8080/auth/user?token=${encodeURIComponent(event.data.token)}`, {
+// Function to 
+async function attemptAuth() {
+  // Check for existing auth token
+  const existingToken = getAuthToken();
+  if (existingToken) {
+    try {
+      console.log('Existing auth token found');
+      // Verify the token by fetching user info
+      const response = await fetch('http://localhost:8080/auth/user', {
         method: 'GET',
         headers: {
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${existingToken}`
         }
-      })
-      .then(response => response.json())
-      .then(data => {
-        console.log('Auth check response:', data);
-        if (data.authenticated) {
-          if (data.user.name) {
-            userName = data.user.name;
-            localStorage.setItem('userName', userName);
-          }
-          
-          // Call handleAuthSuccess after verification
-          handleAuthSuccess(event.data.token);
-        }
-      })
-      .catch(error => {
-        console.error('Error checking auth:', error);
       });
-    }
-  });
 
-  // Check initial auth status
-  fetch('http://localhost:8080/auth/user', {
-    method: 'GET',
-    credentials: 'include',
-    headers: {
-      'Accept': 'application/json'
-    }
-  })
-  .then(response => response.json())
-  .then(data => {
-    console.log('Initial auth check response:', data);
-    if (data.authenticated) {
-      if (data.user.name) {
+      if (response.ok) {
+        const data = await response.json();
         userName = data.user.name;
         localStorage.setItem('userName', userName);
+        authToken = existingToken;
+        handleAuthSuccess(existingToken);
+        return;
+      } else {
+        // Token is invalid
+        clearAuthToken();
       }
-      handleAuthSuccess();
+    } catch (error) {
+      console.error('Error checking auth:', error);
+      clearAuthToken();
     }
-  })
-  .catch(error => {
-    console.error('Error checking initial auth status:', error);
-  });
+  }
+
 }
 
 // Listen for messages from the background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Received message:', message);
   
-  if (message.type === 'TOGGLE_UI') {
-    console.log('Toggling UI visibility');
-    toggleUI();
-    sendResponse({ success: true });
-    return true; // Keep the message channel open for the async response
+  if (message.type === 'AUTH_SUCCESS') {
+    console.log('Received auth success message:', message);
+    
+    // Fetch user info with the token
+    fetch('http://localhost:8080/auth/user', {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${message.token}`
+      }
+    })
+    .then(response => response.json())
+    .then(data => {
+      console.log('User info response:', data);
+      if (data.name) {
+        userName = data.name;
+        localStorage.setItem('userName', userName);
+      }
+      handleAuthSuccess(message.token);
+    })
+    .catch(error => {
+      console.error('Error fetching user info:', error);
+    });
   }
-  
-  return false;
 });
+
+// Watch for URL changes and reinitialize when entering a meeting room
+const urlObserver = new MutationObserver(() => {
+  const url = window.location.href;
+  if (url !== lastUrl) {
+    console.log('URL changed:', url);
+    lastUrl = url;
+    
+    retryAttempt = 0;
+    isRetrying = false;
+    hasHitMaxRetries = false;
+    
+    const existingTranslator = document.querySelector('.shabe-translator');
+    if (existingTranslator) {
+      existingTranslator.remove();
+    }
+    const existingButton = document.querySelector('.shabe-button-container');
+    if (existingButton) {
+      existingButton.remove();
+    }
+    
+    if (isInMeetingRoom()) {
+      console.log('Entered valid meeting room, initializing...');
+      setTimeout(() => {
+        initializeUI();
+        addMeetButtonWithBackoff();
+      }, 1000);
+    } else {
+      console.log('Not in a valid meeting room');
+    }
+  }
+});
+
+urlObserver.observe(document, { subtree: true, childList: true });
 
 // Initialize the UI
 function initializeUI() {
@@ -918,7 +879,7 @@ function initializeUI() {
   translationView.style.flexGrow = '1';
   translationView.style.flexDirection = 'column';
   translationView.innerHTML = `
-    <div class="shabe-header-buttons" style="padding: 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+    <div class="shabe-header-buttons" style="padding: 0px 10px 0px 10px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
       <div style="display: flex; gap: 10px; align-items: center;">
         <span id="shabe-status">Disconnected</span>
         <select class="shabe-language-select" style="padding: 5px; border-radius: 4px; border: 1px solid #ddd;">
@@ -932,14 +893,14 @@ function initializeUI() {
           <option value="zh">中文</option>
         </select>
         <button class="shabe-mic-button" style="padding: 8px; border: none; background: none; cursor: pointer;">
-          <span class="google-symbols">play_circle</span>
+          <span class="google-symbols">mic</span>
         </button>
-        <button class="shabe-detach-button" style="padding: 8px; border: none; background: none; cursor: pointer;">
+        <button class="shabe-detach-button" style="padding: 8px 8px 8px 0px; border: none; background: none; cursor: pointer;">
           <span class="google-symbols">open_in_new</span>
         </button>
       </div>
     </div>
-    <div id="messages" class="shabe-messages" style="flex-grow: 1; overflow-y: auto; padding: 15px;"></div>
+    <div id="messages" class="shabe-messages" style="flex-grow: 1; overflow-y: auto; padding: 5px; margin: 3px;"></div>
   `;
 
   // Add views to translator
@@ -977,10 +938,11 @@ function initializeUI() {
       authToken = event.data.token;
       
       // Send token to server to verify
-      fetch(`http://localhost:8080/auth/user?token=${encodeURIComponent(event.data.token)}`, {
+      fetch(`http://localhost:8080/auth/user`, {
         method: 'GET',
         headers: {
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${event.data.token}`
         }
       })
       .then(response => response.json())
@@ -1002,67 +964,9 @@ function initializeUI() {
     }
   });
 
-  // Check initial auth status
-  fetch('http://localhost:8080/auth/user', {
-    method: 'GET',
-    credentials: 'include',
-    headers: {
-      'Accept': 'application/json'
-    }
-  })
-  .then(response => response.json())
-  .then(data => {
-    console.log('Initial auth check response:', data);
-    if (data.authenticated) {
-      if (data.user.name) {
-        userName = data.user.name;
-        localStorage.setItem('userName', userName);
-      }
-      handleAuthSuccess();
-    } else {
-      // Show login view by default if not authenticated
-      loginView.style.display = 'block';
-      translationView.style.display = 'none';
-    }
-  })
-  .catch(error => {
-    console.error('Error checking initial auth status:', error);
-  });
+  attemptAuth();
+
 }
-
-// Watch for URL changes and reinitialize when entering a meeting room
-const urlObserver = new MutationObserver(() => {
-  const url = window.location.href;
-  if (url !== lastUrl) {
-    console.log('URL changed:', url);
-    lastUrl = url;
-    
-    retryAttempt = 0;
-    isRetrying = false;
-    hasHitMaxRetries = false;
-    
-    const existingTranslator = document.querySelector('.shabe-translator');
-    if (existingTranslator) {
-      existingTranslator.remove();
-    }
-    const existingButton = document.querySelector('.shabe-button-container');
-    if (existingButton) {
-      existingButton.remove();
-    }
-    
-    if (isInMeetingRoom()) {
-      console.log('Entered valid meeting room, initializing...');
-      setTimeout(() => {
-        initializeUI();
-        addMeetButtonWithBackoff();
-      }, 1000);
-    } else {
-      console.log('Not in a valid meeting room');
-    }
-  }
-});
-
-urlObserver.observe(document, { subtree: true, childList: true });
 
 // Initialize when the page is ready
 if (document.readyState === 'loading') {

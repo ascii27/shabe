@@ -40,7 +40,7 @@ func corsMiddleware(next http.Handler) http.Handler {
 		// Allow requests from Chrome extension and Google Meet
 		w.Header().Set("Access-Control-Allow-Origin", "https://meet.google.com")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 
 		if r.Method == "OPTIONS" {
@@ -144,18 +144,13 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := upgrader.Upgrade(w, r, nil)
-	if err != nil {
-		log.Printf("WebSocket upgrade error: %v", err)
-		return
-	}
-
-	// Get user info from token URL parameter
+	// Get user info from Authorization header
 	var userName = "Anonymous"
 	var userEmail = ""
 
-	token := r.URL.Query().Get("token")
-	if token != "" {
+	authHeader := r.Header.Get("Authorization")
+	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
+		token := authHeader[7:]
 		oauthToken := &oauth2.Token{
 			AccessToken: token,
 		}
@@ -163,6 +158,12 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 			userName = user.Name
 			userEmail = user.Email
 		}
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		log.Printf("WebSocket upgrade error: %v", err)
+		return
 	}
 
 	client := &chat.Client{
@@ -203,7 +204,11 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 		switch msg.Type {
 		case "message":
-			// Handle chat message
+			if msg.Text == "" {
+				continue
+			}
+
+			// Create response message
 			response := struct {
 				Type string `json:"type"`
 				Text string `json:"text"`
@@ -213,25 +218,22 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 				Text: msg.Text,
 				Name: client.Name,
 			}
+
+			// Marshal and broadcast the message
 			jsonResponse, err := json.Marshal(response)
 			if err != nil {
 				log.Printf("Error marshaling response: %v", err)
-				return
+				continue
 			}
 			room.BroadcastMessage(jsonResponse)
 
-		case "set_language":
-			// Update client's preferred language
+		case "preferences":
+			log.Printf("Client %s set preferences: language=%s, name=%s", client.Name, msg.Language, msg.Name)
 			if msg.Language != "" {
 				client.Language = msg.Language
-				log.Printf("Updated language preference for %s to %s", client.Name, msg.Language)
 			}
-
-		case "set_name":
-			// Update client's name
 			if msg.Name != "" {
 				client.Name = msg.Name
-				log.Printf("Updated name for client to %s", msg.Name)
 			}
 		}
 	}
