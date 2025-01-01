@@ -11,6 +11,7 @@ Shabe is a real-time translation system that helps break down language barriers 
 - Manual control over translation with Start/Pause functionality
 - Secure Google authentication with token persistence
 - Detachable translation window for flexible viewing
+- Configurable server settings through options page
 
 ## Components
 
@@ -34,6 +35,12 @@ cd shabe
 
 3. The extension icon should now appear in your Chrome toolbar
 
+4. Configure the extension:
+   - Click on the extension icon and select "Options"
+   - Set your server address and port (defaults to localhost:8080)
+   - Sign in with your Google account
+   - The connection status will show if the server is reachable
+
 ### 2. Translation Server
 
 The WebSocket server handles authentication, translation requests, and manages room connections.
@@ -45,13 +52,19 @@ The WebSocket server handles authentication, translation requests, and manages r
 - OpenAI API Key
 - Google OAuth2 Credentials
 
-#### Environment Variables
+#### Configuration
 
-- `OPENAI_API_KEY` (required): Your OpenAI API key for translation
-- `GOOGLE_CLIENT_ID` (required): Your Google OAuth client ID
-- `GOOGLE_CLIENT_SECRET` (required): Your Google OAuth client secret
-- `OAUTH_REDIRECT_URL` (required): OAuth redirect URL (e.g., http://localhost:8080/auth/callback)
-- `PORT` (optional): Server port number (default: 8080)
+##### Environment Variables
+
+Required environment variables:
+- `OPENAI_API_KEY`: Your OpenAI API key for translation
+- `GOOGLE_CLIENT_ID`: Your Google OAuth client ID
+- `GOOGLE_CLIENT_SECRET`: Your Google OAuth client secret
+- `OAUTH_REDIRECT_URL`: OAuth redirect URL (e.g., http://localhost:8080/auth/callback)
+
+Optional environment variables:
+- `PORT`: Server port number (default: 8080)
+- `HOST`: Server host address (default: localhost)
 
 #### Running Locally
 
@@ -68,7 +81,7 @@ export OAUTH_REDIRECT_URL=http://localhost:8080/auth/callback
 go run main.go
 ```
 
-The server will start on port 8080 by default.
+The server will start on the configured port (default: 8080).
 
 #### Using Docker
 
@@ -97,13 +110,25 @@ docker run -p 8080:8080 \
 6. Translations will appear in the message window in real-time
 7. (Optional) Click the detach icon to open the translator in a separate window
 
+### Extension Settings
+
+Access the extension settings through the options page:
+1. Click the extension icon in Chrome
+2. Select "Options"
+3. Configure:
+   - Server address and port
+   - View connection status
+   - Sign in/out of your Google account
+
 ## Development
 
 ### Extension Structure
 
-- `meet/manifest.json` - Extension configuration
+- `meet/manifest.json` - Extension configuration and permissions
 - `meet/content.js` - Main content script for Google Meet integration
-- `meet/background.js` - Background service worker
+- `meet/background.js` - Background service worker for auth handling
+- `meet/options.js` - Settings page functionality
+- `meet/options.html` - Settings page UI
 - `meet/styles.css` - UI styling
 
 ### Server Structure
@@ -118,15 +143,12 @@ docker run -p 8080:8080 \
 
 Shabe uses Google OAuth2 for secure user authentication:
 
-1. Users sign in with their Google account
-2. Authentication tokens are securely stored and automatically refreshed
-3. All WebSocket connections require valid authentication
+1. Users sign in with their Google account through the options page
+2. Authentication tokens are securely stored in chrome.storage.local
+3. All WebSocket connections require valid authentication via URL parameters
 4. Tokens expire after 24 hours for security
+5. Users can sign out at any time through the options page
 
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-[Add your chosen license here]
