@@ -517,7 +517,7 @@ function createDetachedWindow() {
               <option value="zh">中文</option>
             </select>
             <button class="shabe-mic-button" style="padding: 8px; border: none; background: none;">
-              <span class="google-symbols">translate</span>
+              <span class="google-symbols">play_circle</span>
             </button>
           </div>
         </div>
