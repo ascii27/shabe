@@ -315,14 +315,7 @@ async function connectToRoom() {
   const wsUrl = serverUrl.replace('http', 'ws');
   
   console.log('Connecting to websocket:', `${wsUrl}/ws?roomId=${currentRoom}`);
-  ws = new WebSocket(`${wsUrl}/ws?roomId=${encodeURIComponent(currentRoom)}`);
-
-  // Add auth token to WebSocket handshake
-  if (authToken) {
-    ws.onbeforeopen = () => {
-      ws.setRequestHeader('Authorization', `Bearer ${authToken}`);
-    };
-  }
+  ws = new WebSocket(`${wsUrl}/ws?roomId=${encodeURIComponent(currentRoom)}&token=${encodeURIComponent(authToken)}`);
 
   ws.onopen = () => {
     console.log('WebSocket connected');
@@ -763,7 +756,7 @@ async function handleAuthSuccess(token) {
   }
 
   // Connect to the room
-  connectToRoom();
+  connectToRoom(currentRoom);
 }
 
 // Function to attempt authentication

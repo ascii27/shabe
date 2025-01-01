@@ -83,7 +83,7 @@ func main() {
 	mux.Handle("/auth/logout", corsMiddleware(http.HandlerFunc(authManager.LogoutHandler)))
 	mux.Handle("/auth/user", corsMiddleware(http.HandlerFunc(authManager.UserInfoHandler)))
 
-	// WebSocket route - no auth required
+	// WebSocket route - requires authentication
 	mux.HandleFunc("/ws", handleWebSocket)
 
 	// Login page - no auth required
@@ -144,20 +144,20 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get user info from Authorization header
-	var userName = "Anonymous"
-	var userEmail = ""
+	// Get token from URL query parameter
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		http.Error(w, "Authentication required", http.StatusUnauthorized)
+		return
+	}
 
-	authHeader := r.Header.Get("Authorization")
-	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
-		token := authHeader[7:]
-		oauthToken := &oauth2.Token{
-			AccessToken: token,
-		}
-		if user, err := authManager.GetUserInfo(oauthToken); err == nil {
-			userName = user.Name
-			userEmail = user.Email
-		}
+	oauthToken := &oauth2.Token{
+		AccessToken: token,
+	}
+	user, err := authManager.GetUserInfo(oauthToken)
+	if err != nil {
+		http.Error(w, "Invalid authentication token", http.StatusUnauthorized)
+		return
 	}
 
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -169,8 +169,8 @@ func handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	client := &chat.Client{
 		Conn:     conn,
 		Language: "en",
-		Name:     userName,
-		Email:    userEmail,
+		Name:     user.Name,
+		Email:    user.Email,
 	}
 
 	room := roomManager.GetOrCreateRoom(roomID)
