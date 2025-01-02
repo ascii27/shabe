@@ -1,39 +1,104 @@
-# Shabe Meet Translator
+# Shabe Chrome Extension
 
-A Chrome extension that provides real-time translation in Google Meet.
+Chrome extension component of Shabe that integrates real-time translation into Google Meet.
 
 ## Features
 
-- Automatically detects Google Meet room ID
-- Connects to Shabe translation server
-- Supports multiple languages:
-  - English
-  - Japanese
-  - Korean
-  - Chinese
-  - Spanish
-  - French
-  - German
-- Persists language preferences
-- Toggle translator UI with extension icon
+- Seamless integration with Google Meet UI
+- Real-time speech-to-text translation
+- Detachable translation window
+- Language selection
+- OAuth2 authentication with Google
+- Configurable server settings
 
-## Installation
+## Directory Structure
 
-1. Open Chrome and go to `chrome://extensions/`
-2. Enable "Developer mode" in the top right
-3. Click "Load unpacked" and select the `meet` directory
+```
+/meet
+├── manifest.json     # Extension configuration
+├── content.js       # Google Meet integration
+├── background.js    # Service worker for auth
+├── options.html     # Settings page UI
+├── options.js       # Settings functionality
+└── styles.css       # UI styling
+```
 
-## Usage
+## Development Setup
 
-1. Join a Google Meet room
-2. Click the Shabe Meet Translator icon in your Chrome toolbar
-3. Select your preferred language from the dropdown
-4. The translator will automatically connect to the room
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-## Development
+2. Configure extension:
+   - Copy `config.example.js` to `config.js`
+   - Update server URL and other settings
 
-The extension consists of:
-- `manifest.json`: Extension configuration
-- `content.js`: Main content script that injects the translator UI
-- `background.js`: Background script for extension icon handling
-- `styles.css`: Styling for the translator UI
+3. Load in Chrome:
+   - Go to `chrome://extensions`
+   - Enable "Developer mode"
+   - Click "Load unpacked"
+   - Select this directory
+
+## Components
+
+### Content Script (`content.js`)
+- Injects UI elements into Google Meet
+- Handles speech recognition
+- Manages WebSocket connection
+- Controls translation window
+
+### Background Script (`background.js`)
+- Manages authentication state
+- Handles OAuth2 flow
+- Stores tokens securely
+
+### Options Page (`options.js`, `options.html`)
+- Server configuration
+- Authentication management
+- Connection status
+- Language preferences
+
+## Building for Production
+
+1. Prepare the build:
+   ```bash
+   npm run build
+   ```
+
+2. The extension will be built in the `dist` directory
+
+3. For Chrome Web Store:
+   - Zip the contents of `dist`
+   - Upload to Chrome Web Store Developer Dashboard
+
+## Testing
+
+```bash
+npm test
+```
+
+## Debugging
+
+1. Background script:
+   - Go to `chrome://extensions`
+   - Find Shabe
+   - Click "background page" under "Inspect views"
+
+2. Content script:
+   - Open Chrome DevTools in Google Meet
+   - Look for console messages prefixed with "[Shabe]"
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch
+3. Make your changes
+4. Submit a pull request
+
+## Security
+
+- Tokens are stored in `chrome.storage.local`
+- HTTPS is required for production
+- OAuth2 is used for authentication
+- Sensitive data is never exposed to the page
