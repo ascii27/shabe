@@ -1,55 +1,10 @@
+import { getServerUrl, getAuthToken, setAuthToken, clearAuthToken } from './utils.js';
+
 // Default settings
 const DEFAULT_SETTINGS = {
   serverAddress: 'localhost',
   serverPort: 8080
 };
-
-// Function to get server URL based on settings
-async function getServerUrl() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['serverAddress', 'serverPort'], (items) => {
-      const address = items.serverAddress || DEFAULT_SETTINGS.serverAddress;
-      const port = items.serverPort || DEFAULT_SETTINGS.serverPort;
-      resolve(`http://${address}:${port}`);
-    });
-  });
-}
-
-// Function to get auth token
-async function getAuthToken() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['authToken', 'authTokenExpiration'], (items) => {
-      const { authToken, authTokenExpiration } = items;
-      
-      if (!authToken || !authTokenExpiration) {
-        resolve(null);
-        return;
-      }
-
-      if (Date.now() > parseInt(authTokenExpiration)) {
-        clearAuthToken();
-        resolve(null);
-        return;
-      }
-
-      resolve(authToken);
-    });
-  });
-}
-
-// Function to set auth token
-function setAuthToken(token) {
-  const expirationTime = Date.now() + (24 * 60 * 60 * 1000); // 24 hours from now
-  chrome.storage.local.set({
-    authToken: token,
-    authTokenExpiration: expirationTime
-  });
-}
-
-// Function to clear auth token
-function clearAuthToken() {
-  chrome.storage.local.remove(['authToken', 'authTokenExpiration', 'userName']);
-}
 
 // Function to update connection status
 async function updateConnectionStatus() {

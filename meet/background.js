@@ -1,3 +1,5 @@
+import { getServerUrl } from './utils.js';
+
 // Listen for extension icon clicks
 chrome.action.onClicked.addListener(async (tab) => {
   // Check if we're on a Google Meet page
@@ -36,17 +38,6 @@ chrome.action.onClicked.addListener(async (tab) => {
     console.log('Not on Google Meet page');
   }
 });
-
-// Function to get server URL from storage
-async function getServerUrl() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['serverAddress', 'serverPort'], (items) => {
-      const address = items.serverAddress || 'localhost';
-      const port = items.serverPort || 8080;
-      resolve(`http://${address}:${port}`);
-    });
-  });
-}
 
 // Listen for auth success message from options page
 chrome.runtime.onMessage.addListener((message, sender) => {
