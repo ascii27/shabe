@@ -7,7 +7,7 @@ shabe
 
 # Config files
 config.yaml
-.env
+server/.env
 *.env
 
 # macOS

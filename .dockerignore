@@ -14,7 +14,7 @@ docker-compose*.yml
 
 # Config
 config.yaml
-.env
+server/.env
 *.env
 
 # Build artifacts
