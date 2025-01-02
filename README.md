@@ -38,8 +38,16 @@ Shabe is a Chrome extension that provides real-time translation in Google Meet, 
    ```
    Or using Docker:
    ```bash
+   # Build the image
    docker build -t shabe-server .
-   docker run -p 8080:8080 shabe-server
+   
+   # Run with environment variables
+   docker run -p 8080:8080 \
+     -e GOOGLE_CLIENT_ID="$GOOGLE_CLIENT_ID" \
+     -e GOOGLE_CLIENT_SECRET="$GOOGLE_CLIENT_SECRET" \
+     -e GOOGLE_REDIRECT_URL="$GOOGLE_REDIRECT_URL" \
+     -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+     shabe-server
    ```
 
 ### Extension Setup

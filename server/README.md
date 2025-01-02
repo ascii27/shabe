@@ -111,8 +111,25 @@ go test ./websocket
 
 2. Run container:
    ```bash
+   # Option 1: Using environment variables from shell
+   docker run -p 8080:8080 \
+     -e GOOGLE_CLIENT_ID="$GOOGLE_CLIENT_ID" \
+     -e GOOGLE_CLIENT_SECRET="$GOOGLE_CLIENT_SECRET" \
+     -e GOOGLE_REDIRECT_URL="$GOOGLE_REDIRECT_URL" \
+     -e OPENAI_API_KEY="$OPENAI_API_KEY" \
+     shabe-server
+
+   # Option 2: Using .env file
    docker run -p 8080:8080 \
      --env-file .env \
+     shabe-server
+
+   # Option 3: Specifying values directly (not recommended for production)
+   docker run -p 8080:8080 \
+     -e GOOGLE_CLIENT_ID="your_client_id" \
+     -e GOOGLE_CLIENT_SECRET="your_client_secret" \
+     -e GOOGLE_REDIRECT_URL="http://localhost:8080/auth/callback" \
+     -e OPENAI_API_KEY="your_openai_key" \
      shabe-server
    ```
 
