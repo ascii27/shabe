@@ -47,7 +47,7 @@ async function updateConnectionStatus() {
     statusIndicator.className = 'status-indicator connected';
     statusText.textContent = 'Connected to server';
     
-    if (data.user.name) {
+    if (data.authenticated && data.user.name) {
       userText.textContent = `Signed in as ${data.user.name}`;
       userInfo.style.display = 'block';
       signOutButton.style.display = 'inline-block';

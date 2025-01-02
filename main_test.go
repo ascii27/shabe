@@ -8,6 +8,7 @@ import (
 	"shabe/chat"
 	"shabe/translate"
 	wshandler "shabe/websocket"
+	"strings"
 	"testing"
 
 	"github.com/gorilla/mux"
@@ -36,9 +37,9 @@ func setupTestServer(t *testing.T) *httptest.Server {
 	router := mux.NewRouter()
 
 	// Auth routes
-	router.HandleFunc("/auth/url", authManager.HandleAuthURL).Methods("GET")
+	router.HandleFunc("/auth/login", authManager.HandleAuthURL).Methods("GET")
 	router.HandleFunc("/auth/callback", authManager.HandleAuthCallback).Methods("GET")
-	router.HandleFunc("/auth/verify", authManager.HandleAuthVerify).Methods("GET")
+	router.HandleFunc("/auth/user", authManager.HandleAuthVerify).Methods("GET")
 
 	// WebSocket route
 	router.HandleFunc("/ws", wsHandler.HandleConnection)
@@ -55,20 +56,32 @@ func TestAuthEndpoints(t *testing.T) {
 	server := setupTestServer(t)
 	defer server.Close()
 
-	// Test /auth/url endpoint
+	// Test /auth/login endpoint
 	t.Run("Auth URL endpoint", func(t *testing.T) {
-		resp, err := http.Get(server.URL + "/auth/url")
+		client := &http.Client{
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				return http.ErrUseLastResponse
+			},
+		}
+		resp, err := client.Get(server.URL + "/auth/login")
 		if err != nil {
 			t.Fatal(err)
 		}
-		if resp.StatusCode != http.StatusOK {
-			t.Errorf("Expected status OK, got %v", resp.Status)
+		if resp.StatusCode != http.StatusTemporaryRedirect {
+			t.Errorf("Expected status TemporaryRedirect, got %v", resp.Status)
+		}
+		location := resp.Header.Get("Location")
+		if location == "" {
+			t.Error("Expected Location header in response, got empty string")
+		}
+		if !strings.Contains(location, "accounts.google.com") {
+			t.Errorf("Expected redirect URL to contain accounts.google.com, got %s", location)
 		}
 	})
 
-	// Test /auth/verify endpoint without token
+	// Test /auth/user endpoint without token
 	t.Run("Auth verify without token", func(t *testing.T) {
-		resp, err := http.Get(server.URL + "/auth/verify")
+		resp, err := http.Get(server.URL + "/auth/user")
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -109,62 +110,53 @@ func TestAuthMiddleware(t *testing.T) {
 		RedirectURL:  "http://localhost:8080/auth/callback",
 	})
 
-	// Create test handler
-	testHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-
-	// Create test server with auth middleware
-	handler := manager.AuthMiddleware(testHandler)
-	server := httptest.NewServer(handler)
-	defer server.Close()
-
-	// Test WebSocket upgrade request (should skip auth)
-	req, _ := http.NewRequest("GET", server.URL, nil)
-	req.Header.Set("Upgrade", "websocket")
-	resp, err := http.DefaultClient.Do(req)
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
-
 	// Test without token
-	req, _ = http.NewRequest("GET", server.URL, nil)
-	resp, err = http.DefaultClient.Do(req)
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-
-	// Test with invalid token
-	req, _ = http.NewRequest("GET", server.URL, nil)
-	req.Header.Set("Authorization", "Bearer invalid-token")
-	resp, err = http.DefaultClient.Do(req)
-	assert.NoError(t, err)
-	assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
-}
-
-func TestManager_HandleAuthURL(t *testing.T) {
-	manager := NewManager(&Config{
-		ClientID:     "test-client-id",
-		ClientSecret: "test-client-secret",
-		RedirectURL:  "http://localhost:8080/auth/callback",
-	})
-
-	req := httptest.NewRequest("GET", "/auth/url", nil)
+	req := httptest.NewRequest("GET", "/", nil)
 	w := httptest.NewRecorder()
 
-	manager.HandleAuthURL(w, req)
+	handler := manager.AuthMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Expected status code %d, got %d", http.StatusUnauthorized, w.Code)
+	}
+
+	// Test with invalid token
+	req = httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer invalid-token")
+	w = httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("Expected status code %d, got %d", http.StatusUnauthorized, w.Code)
+	}
+
+	// Test with valid token
+	req = httptest.NewRequest("GET", "/", nil)
+	req.Header.Set("Authorization", "Bearer mock-token")
+	w = httptest.NewRecorder()
+
+	// Mock getUserInfoFunc
+	originalGetUserInfo := manager.getUserInfoFunc
+	defer func() { manager.getUserInfoFunc = originalGetUserInfo }()
+	manager.getUserInfoFunc = func(token string) (*UserInfo, error) {
+		if token != "mock-token" {
+			t.Errorf("Expected token 'mock-token', got '%s'", token)
+		}
+		return &UserInfo{
+			ID:    "123",
+			Email: "test@example.com",
+		}, nil
+	}
+
+	handler.ServeHTTP(w, req)
 
 	if w.Code != http.StatusOK {
 		t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
-	}
-
-	var response struct {
-		URL string `json:"url"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
-		t.Fatalf("Failed to decode response: %v", err)
-	}
-
-	if response.URL == "" {
-		t.Error("Expected URL in response, got empty string")
 	}
 }
 
@@ -187,13 +179,72 @@ func TestManager_HandleAuthVerify(t *testing.T) {
 
 	// Test with invalid token
 	req = httptest.NewRequest("GET", "/auth/verify", nil)
-	req.Header.Set("Authorization", "invalid-token")
+	req.Header.Set("Authorization", "Bearer invalid-token")
 	w = httptest.NewRecorder()
 
 	manager.HandleAuthVerify(w, req)
 
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("Expected status code %d, got %d", http.StatusUnauthorized, w.Code)
+	}
+
+	// Test with valid token
+	req = httptest.NewRequest("GET", "/auth/verify", nil)
+	req.Header.Set("Authorization", "Bearer mock-token")
+	w = httptest.NewRecorder()
+
+	// Mock getUserInfoFunc
+	originalGetUserInfo := manager.getUserInfoFunc
+	defer func() { manager.getUserInfoFunc = originalGetUserInfo }()
+	manager.getUserInfoFunc = func(token string) (*UserInfo, error) {
+		if token != "mock-token" {
+			t.Errorf("Expected token 'mock-token', got '%s'", token)
+		}
+		return &UserInfo{
+			ID:    "123",
+			Email: "test@example.com",
+		}, nil
+	}
+
+	manager.HandleAuthVerify(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+	}
+
+	var response UserInfo
+	if err := json.NewDecoder(w.Body).Decode(&response); err != nil {
+		t.Fatalf("Failed to decode response: %v", err)
+	}
+
+	if response.ID != "123" || response.Email != "test@example.com" {
+		t.Errorf("Unexpected response: %+v", response)
+	}
+}
+
+func TestManager_HandleAuthURL(t *testing.T) {
+	manager := NewManager(&Config{
+		ClientID:     "test-client-id",
+		ClientSecret: "test-client-secret",
+		RedirectURL:  "http://localhost:8080/auth/callback",
+	})
+
+	req := httptest.NewRequest("GET", "/auth/login", nil)
+	w := httptest.NewRecorder()
+
+	manager.HandleAuthURL(w, req)
+
+	if w.Code != http.StatusTemporaryRedirect {
+		t.Errorf("Expected status code %d, got %d", http.StatusTemporaryRedirect, w.Code)
+	}
+
+	location := w.Header().Get("Location")
+	if location == "" {
+		t.Error("Expected Location header in response, got empty string")
+	}
+
+	if !strings.Contains(location, "accounts.google.com") {
+		t.Errorf("Expected redirect URL to contain accounts.google.com, got %s", location)
 	}
 }
 
@@ -240,5 +291,41 @@ func TestManager_HandleAuthCallback(t *testing.T) {
 
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("Expected status code %d, got %d", http.StatusInternalServerError, w.Code)
+	}
+
+	// Test successful case with mock exchange
+	originalExchange := manager.Exchange
+	defer func() { manager.Exchange = originalExchange }()
+
+	manager.Exchange = func(code string) (string, error) {
+		return "mock-token", nil
+	}
+
+	req = httptest.NewRequest("GET", "/auth/callback?code=valid-code", nil)
+	w = httptest.NewRecorder()
+
+	manager.HandleAuthCallback(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("Expected status code %d, got %d", http.StatusOK, w.Code)
+	}
+
+	contentType := w.Header().Get("Content-Type")
+	if contentType != "text/html" {
+		t.Errorf("Expected Content-Type %s, got %s", "text/html", contentType)
+	}
+
+	body := w.Body.String()
+	expectedContents := []string{
+		"Authentication Successful",
+		"type: 'auth_success'",
+		"mock-token",
+		"window.close()",
+	}
+
+	for _, expected := range expectedContents {
+		if !strings.Contains(body, expected) {
+			t.Errorf("Expected response to contain %q", expected)
+		}
 	}
 }

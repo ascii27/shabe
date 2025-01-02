@@ -157,8 +157,9 @@ func (ws *WebSocket) handleChatMessage(msg Message, client *chat.Client, room *c
 	}
 
 	room.BroadcastMessage(func(c *chat.Client) error {
+		// Skip sending message back to sender
 		if c == client {
-			return ws.sendMessage(c, msg.Text, client.GetName())
+			return nil
 		}
 		return ws.sendTranslatedMessage(c, msg.Text, client)
 	})

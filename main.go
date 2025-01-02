@@ -29,10 +29,28 @@ func main() {
 	// Set up routes
 	router := mux.NewRouter()
 
+	// CORS middleware
+	router.Use(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Access-Control-Allow-Origin", "https://meet.google.com")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+
+			// Handle preflight requests
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	})
+
 	// Auth routes
-	router.HandleFunc("/auth/url", authManager.HandleAuthURL).Methods("GET")
+	router.HandleFunc("/auth/login", authManager.HandleAuthURL).Methods("GET")
 	router.HandleFunc("/auth/callback", authManager.HandleAuthCallback).Methods("GET")
-	router.HandleFunc("/auth/verify", authManager.HandleAuthVerify).Methods("GET")
+	router.HandleFunc("/auth/user", authManager.HandleAuthVerify).Methods("GET")
 
 	// WebSocket route
 	router.HandleFunc("/ws", wsHandler.HandleConnection)

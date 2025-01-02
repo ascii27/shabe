@@ -807,11 +807,13 @@ async function attemptAuth() {
 
       if (response.ok) {
         const data = await response.json();
-        userName = data.user.name;
-        await chrome.storage.local.set({ userName: userName });
-        authToken = existingToken;
-        await handleAuthSuccess(existingToken);
-        return;
+        if (data.authenticated && data.user.name) {
+          userName = data.user.name;
+          await chrome.storage.local.set({ userName: userName });
+          authToken = existingToken;
+          await handleAuthSuccess(existingToken);
+          return;
+        }
       } else {
         // Token is invalid
         await clearAuthToken();
@@ -842,10 +844,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(response => response.json())
       .then(async data => {
         console.log('User info response:', data);
-        if (data.user.name) {
+        if (data.authenticated && data.user.name) {
           await chrome.storage.local.set({ userName: data.user.name });
+          await handleAuthSuccess(message.token);
         }
-        await handleAuthSuccess(message.token);
       })
       .catch(error => {
         console.error('Error fetching user info:', error);
