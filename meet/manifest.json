@@ -14,13 +14,15 @@
     "https://meet.google.com/*"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "content_scripts": [
     {
       "matches": ["https://meet.google.com/*"],
       "js": ["content.js"],
-      "css": ["styles.css"]
+      "css": ["styles.css"],
+      "type": "module"
     }
   ],
   "action": {
@@ -39,7 +41,7 @@
   "options_page": "options.html",
   "web_accessible_resources": [
     {
-      "resources": ["google-symbols.woff2"],
+      "resources": ["utils.js", "google-symbols.woff2"],
       "matches": ["https://meet.google.com/*", "http://*/*"]
     }
   ]

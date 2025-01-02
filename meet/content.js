@@ -1,8 +1,17 @@
+// Declare utility functions that will be initialized
+let getAuthToken;
+let setAuthToken;
+let clearAuthToken;
+let getServerUrl;
+let extractMeetRoomId;
+let isInMeetingRoom;
+let isValidOrigin;
+
+// Initialize variables
 let ws = null;
 let recognition = null;
 let isTranslating = false;
 let userName = '';
-let lastUrl = window.location.href;
 let isUIVisible = false;
 let popupWindow = null;
 let currentRoom = null;
@@ -13,54 +22,85 @@ let retryAttempt = 0;
 let maxRetryAttempts = 5;
 let authToken = null;
 
-// Token management functions
-async function setAuthToken(token) {
-  const expirationTime = Date.now() + (24 * 60 * 60 * 1000); // 24 hours from now
-  await chrome.storage.local.set({
-    authToken: token,
-    authTokenExpiration: expirationTime
-  });
-  authToken = token;
+// Main initialization function
+function initializeContentScript() {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', startInitialization);
+  } else {
+    startInitialization();
+  }
 }
 
-async function getAuthToken() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['authToken', 'authTokenExpiration'], (items) => {
-      const { authToken, authTokenExpiration } = items;
+// Function to start initialization after utils are loaded
+function startInitialization() {
+  if (isInMeetingRoom(window.location.href)) {
+    setTimeout(() => {
+      initializeUI();
+      addMeetButtonWithBackoff();
+    }, 1000);
+  }
+
+  // Listen for auth callback
+  window.addEventListener('message', async (event) => {
+    if (event.origin !== await getServerUrl()) {
+      return;
+    }
+
+    console.log('Received postMessage:', event.data);
+
+    if (event.data && event.data.type === 'auth_success' && event.data.token) {
+      console.log('Auth success, verifying token');
       
-      if (!authToken || !authTokenExpiration) {
-        resolve(null);
-        return;
-      }
-
-      if (Date.now() > parseInt(authTokenExpiration)) {
-        clearAuthToken();
-        resolve(null);
-        return;
-      }
-
-      resolve(authToken);
-    });
+      // Set auth token globally
+      authToken = event.data.token;
+      
+      // Send token to server to verify
+      getServerUrl().then(serverUrl => {
+        fetch(`${serverUrl}/auth/user`, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${event.data.token}`
+          }
+        })
+        .then(response => response.json())
+        .then(data => {
+          console.log('Auth check response:', data);
+          if (data.authenticated) {
+            if (data.user.name) {
+              chrome.storage.local.set({ userName: data.user.name });
+            }
+            
+            // Call handleAuthSuccess after verification
+            handleAuthSuccess(event.data.token);
+          }
+        })
+        .catch(error => {
+          console.error('Error checking auth:', error);
+        });
+      });
+    }
   });
 }
 
-function clearAuthToken() {
-  chrome.storage.local.remove(['authToken', 'authTokenExpiration', 'userName']);
-  authToken = null;
-}
+// Initialize utils before anything else runs
+(async function initializeUtils() {
+  try {
+    const utils = await import(chrome.runtime.getURL('utils.js'));
+    getAuthToken = utils.getAuthToken;
+    setAuthToken = utils.setAuthToken;
+    clearAuthToken = utils.clearAuthToken;
+    getServerUrl = utils.getServerUrl;
+    extractMeetRoomId = utils.extractMeetRoomId;
+    isInMeetingRoom = utils.isInMeetingRoom;
+    isValidOrigin = utils.isValidOrigin;
 
-// Function to extract room ID from Google Meet URL
-function extractMeetRoomId(url) {
-  const meetRegex = /^https:\/\/meet\.google\.com\/([a-z0-9]{3}-[a-z0-9]{4}-[a-z0-9]{3})(?:\?.*)?$/;
-  const match = url.match(meetRegex);
-  return match ? match[1] : null;
-}
-
-// Function to check if we're in a valid meeting room
-function isInMeetingRoom() {
-  const roomId = extractMeetRoomId(window.location.href);
-  return roomId !== null;
-}
+    // Now that utils are loaded, initialize the rest of the content script
+    initializeContentScript();
+  } catch (error) {
+    console.error('Failed to load utils:', error);
+  }
+})();
 
 // Function to add button with exponential backoff
 function addMeetButtonWithBackoff() {
@@ -69,7 +109,7 @@ function addMeetButtonWithBackoff() {
     return;
   }
 
-  if (!isInMeetingRoom()) {
+  if (!isInMeetingRoom(window.location.href)) {
     console.log('Not in a valid meeting room, waiting...');
     return;
   }
@@ -163,7 +203,7 @@ function addMeetButtonWithBackoff() {
 
 // Function to toggle UI visibility
 function toggleUI() {
-  if (!isInMeetingRoom()) {
+  if (!isInMeetingRoom(window.location.href)) {
     console.log('Not in a valid meeting room');
     return;
   }
@@ -284,17 +324,6 @@ function getSpeechLangCode(lang) {
     'de': 'de-DE'
   };
   return langMap[lang] || 'en-US';
-}
-
-// Function to get server URL from storage
-async function getServerUrl() {
-  return new Promise((resolve) => {
-    chrome.storage.local.get(['serverAddress', 'serverPort'], (items) => {
-      const address = items.serverAddress || 'localhost';
-      const port = items.serverPort || 8080;
-      resolve(`http://${address}:${port}`);
-    });
-  });
 }
 
 // Function to connect to WebSocket
@@ -463,6 +492,78 @@ function sendMessage(text) {
   });
 }
 
+// Helper function to set up mic button event listener
+function setupMicButton(micButton) {
+  const micIcon = micButton?.querySelector('.google-symbols');
+  if (micButton && micIcon) {
+    micButton.addEventListener('click', () => {
+      if (isTranslating) {
+        stopTranslation();
+        micIcon.textContent = 'mic';
+        micButton.style.color = '#000';
+      } else {
+        startTranslation();
+        micIcon.textContent = 'mic_off';
+        micButton.style.color = '#1a73e8';
+      }
+    });
+  }
+}
+
+// Helper function to set up language select event listener
+function setupLanguageSelect(languageSelect) {
+  if (languageSelect) {
+    chrome.storage.local.get('language', (items) => {
+      const language = items.language || 'en';
+      selectedLanguage = language; // Update the global selectedLanguage
+      languageSelect.value = language;
+      languageSelect.addEventListener('change', (e) => {
+        const newLanguage = e.target.value;
+        selectedLanguage = newLanguage; // Update the global selectedLanguage
+        chrome.storage.local.set({ language: newLanguage });
+        
+        // Update speech recognition language if it's running
+        if (recognition) {
+          recognition.lang = getSpeechLangCode(newLanguage);
+          if (isTranslating) {
+            recognition.stop();
+            recognition.start();
+          }
+        }
+        
+        // Send preferences to server if connected
+        if (ws) {
+          sendPreferences();
+        }
+      });
+    });
+  }
+}
+
+// Helper function to set up translation view event listeners
+function setupTranslationViewListeners(container) {
+  if (!container) {
+    console.error('Container not found for translation view listeners');
+    return;
+  }
+
+  // Add language select event listener
+  const languageSelect = container.querySelector('.shabe-language-select');
+  setupLanguageSelect(languageSelect);
+
+  // Add mic button event listener
+  const micButton = container.querySelector('.shabe-mic-button');
+  setupMicButton(micButton);
+
+  // Add detach button event listener
+  const detachButton = container.querySelector('.shabe-detach-button');
+  if (detachButton) {
+    detachButton.addEventListener('click', () => {
+      createDetachedWindow();
+    });
+  }
+}
+
 // Function to create detached window
 function createDetachedWindow() {
   if (popupWindow && !popupWindow.closed) {
@@ -584,35 +685,11 @@ function createDetachedWindow() {
   
   // Set up language select
   const languageSelect = popup.querySelector('.shabe-language-select');
-  if (languageSelect) {
-    chrome.storage.local.get('language', (items) => {
-      const language = items.language || 'en';
-      languageSelect.value = language;
-      languageSelect.addEventListener('change', (e) => {
-        chrome.storage.local.set({ language: e.target.value });
-        if (ws) {
-          sendPreferences();
-        }
-      });
-    });
-  }
+  setupLanguageSelect(languageSelect);
 
   // Set up mic button
   const micButton = popup.querySelector('.shabe-mic-button');
-  const micIcon = micButton?.querySelector('.google-symbols');
-  if (micButton && micIcon) {
-    micButton.addEventListener('click', () => {
-      if (isTranslating) {
-        stopTranslation();
-        micIcon.textContent = 'mic';
-        micButton.style.color = '#000';
-      } else {
-        startTranslation();
-        micIcon.textContent = 'mic_off';
-        micButton.style.color = '#1a73e8';
-      }
-    });
-  }
+  setupMicButton(micButton);
 
   // Add detach button event listener
   const detachButton = popup.querySelector('.shabe-detach-button');
@@ -677,54 +754,6 @@ function createDetachedWindow() {
       container.style.display = 'flex';
     }
   });
-}
-
-// Helper function to set up translation view event listeners
-function setupTranslationViewListeners(container) {
-  if (!container) {
-    console.error('Container not found for translation view listeners');
-    return;
-  }
-
-  // Add language select event listener
-  const languageSelect = container.querySelector('.shabe-language-select');
-  if (languageSelect) {
-    chrome.storage.local.get('language', (items) => {
-      const language = items.language || 'en';
-      languageSelect.value = language;
-      languageSelect.addEventListener('change', (e) => {
-        chrome.storage.local.set({ language: e.target.value });
-        if (ws) {
-          sendPreferences();
-        }
-      });
-    });
-  }
-
-  // Add mic button event listener
-  const micButton = container.querySelector('.shabe-mic-button');
-  const micIcon = micButton?.querySelector('.google-symbols');
-  if (micButton && micIcon) {
-    micButton.addEventListener('click', () => {
-      if (isTranslating) {
-        stopTranslation();
-        micIcon.textContent = 'mic';
-        micButton.style.color = '#000';
-      } else {
-        startTranslation();
-        micIcon.textContent = 'mic_off';
-        micButton.style.color = '#1a73e8';
-      }
-    });
-  }
-
-  // Add detach button event listener
-  const detachButton = container.querySelector('.shabe-detach-button');
-  if (detachButton) {
-    detachButton.addEventListener('click', () => {
-      createDetachedWindow();
-    });
-  }
 }
 
 // Function to handle successful authentication
@@ -794,12 +823,6 @@ async function attemptAuth() {
   }
 }
 
-// Function to validate message origin
-async function isValidOrigin(origin) {
-  const serverUrl = await getServerUrl();
-  return origin === serverUrl;
-}
-
 // Listen for messages from the background script
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('Received message:', message);
@@ -829,98 +852,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       });
     });
   }
+  return true; // Return true to indicate that the callback is properly closed
 });
 
-// Listen for auth callback
-window.addEventListener('message', async (event) => {
-  if (event.origin !== await getServerUrl()) {
-    return;
-  }
 
-  console.log('Received postMessage:', event.data);
-
-  if (event.data && event.data.type === 'auth_success' && event.data.token) {
-    console.log('Auth success, verifying token');
-    
-    // Set auth token globally
-    authToken = event.data.token;
-    
-    // Send token to server to verify
-    getServerUrl().then(serverUrl => {
-      fetch(`${serverUrl}/auth/user`, {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Authorization': `Bearer ${event.data.token}`
-        }
-      })
-      .then(response => response.json())
-      .then(data => {
-        console.log('Auth check response:', data);
-        if (data.authenticated) {
-          if (data.user.name) {
-            chrome.storage.local.set({ userName: data.user.name });
-          }
-          
-          // Call handleAuthSuccess after verification
-          handleAuthSuccess(event.data.token);
-        }
-      })
-      .catch(error => {
-        console.error('Error checking auth:', error);
-      });
-    });
-  }
-});
-
-// Add event listeners
-const detachButton = document.querySelector('.shabe-detach-button');
-if (detachButton) {
-  detachButton.addEventListener('click', async () => {
-    console.log('Detach button clicked');
-    
-    // Open login window if not authenticated
-    if (!authToken) {
-      const serverUrl = await getServerUrl();
-      window.open(`${serverUrl}/auth/login`, 'ShabeLogin', 'width=600,height=600,left=200,top=200');
-      return;
-    }
-  });
-}
-
-// Watch for URL changes and reinitialize when entering a meeting room
-const urlObserver = new MutationObserver(() => {
-  const url = window.location.href;
-  if (url !== lastUrl) {
-    console.log('URL changed:', url);
-    lastUrl = url;
-    
-    retryAttempt = 0;
-    isRetrying = false;
-    hasHitMaxRetries = false;
-    
-    const existingTranslator = document.querySelector('.shabe-translator');
-    if (existingTranslator) {
-      existingTranslator.remove();
-    }
-    const existingButton = document.querySelector('.shabe-button-container');
-    if (existingButton) {
-      existingButton.remove();
-    }
-    
-    if (isInMeetingRoom()) {
-      console.log('Entered valid meeting room, initializing...');
-      setTimeout(() => {
-        initializeUI();
-        addMeetButtonWithBackoff();
-      }, 1000);
-    } else {
-      console.log('Not in a valid meeting room');
-    }
-  }
-});
-
-urlObserver.observe(document, { subtree: true, childList: true });
 
 // Initialize the UI
 function initializeUI() {
@@ -967,14 +902,14 @@ function initializeUI() {
       <div style="display: flex; gap: 10px; align-items: center;">
         <span id="shabe-status">Disconnected</span>
         <select class="shabe-language-select" style="padding: 5px; border-radius: 4px; border: 1px solid #ddd;">
-          <option value="en">English</option>
-          <option value="ja">日本語</option>
-          <option value="es">Español</option>
-          <option value="fr">Français</option>
-          <option value="de">Deutsch</option>
-          <option value="pt">Português</option>
-          <option value="ko">한국어</option>
-          <option value="zh">中文</option>
+              <option value="en">English</option>
+              <option value="ja">日本語</option>
+              <option value="es">Español</option>
+              <option value="fr">Français</option>
+              <option value="de">Deutsch</option>
+              <option value="pt">Português</option>
+              <option value="ko">한국어</option>
+              <option value="zh">中文</option>
         </select>
         <button class="shabe-mic-button" style="padding: 8px; border: none; background: none; cursor: pointer;">
           <span class="google-symbols">mic</span>
@@ -984,7 +919,7 @@ function initializeUI() {
         </button>
       </div>
     </div>
-    <div id="messages" class="shabe-messages" style="flex-grow: 1; overflow-y: auto; padding: 5px; margin: 3px;"></div>
+    <div id="messages" class="shabe-messages"></div>
   `;
 
   // Add views to translator
@@ -1014,61 +949,18 @@ function initializeUI() {
     });
   }
 
-  // Listen for auth success message
-  window.addEventListener('message', async (event) => {
-    if (event.data && event.data.type === 'auth_success') {
-      console.log('Received auth token:', event.data.token);
-      
-      // Set auth token globally
-      authToken = event.data.token;
-      
-      // Send token to server to verify
-      getServerUrl().then(serverUrl => {
-        fetch(`${serverUrl}/auth/user`, {
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json',
-            'Authorization': `Bearer ${event.data.token}`
-          }
-        })
-        .then(response => response.json())
-        .then(data => {
-          console.log('Auth check response:', data);
-          if (data.authenticated) {
-            if (data.user.name) {
-              chrome.storage.local.set({ userName: data.user.name });
-            }
-            
-            // Call handleAuthSuccess after verification
-            handleAuthSuccess(event.data.token);
-          }
-        })
-        .catch(error => {
-          console.error('Error checking auth:', error);
-        });
-      });
-    }
-  });
-
+  // Attempt authentication
   attemptAuth();
-
 }
 
-// Initialize when the page is ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    if (isInMeetingRoom()) {
-      setTimeout(() => {
-        initializeUI();
-        addMeetButtonWithBackoff();
-      }, 1000);
-    }
-  });
-} else {
-  if (isInMeetingRoom()) {
-    setTimeout(() => {
-      initializeUI();
+// Watch for URL changes and reinitialize when entering a meeting room
+let lastUrl = window.location.href;
+new MutationObserver(() => {
+  const url = window.location.href;
+  if (url !== lastUrl) {
+    lastUrl = url;
+    if (isInMeetingRoom(url)) {
       addMeetButtonWithBackoff();
-    }, 1000);
+    }
   }
-}
+}).observe(document, { subtree: true, childList: true });
