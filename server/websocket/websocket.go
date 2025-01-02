@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"shabe/auth"
-	"shabe/chat"
-	"shabe/translate"
+
+	"shabe/server/auth"
+	"shabe/server/chat"
+	"shabe/server/translate"
 
 	"github.com/gorilla/websocket"
 )

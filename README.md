@@ -13,6 +13,12 @@ Shabe is a real-time translation system that helps break down language barriers 
 - Detachable translation window for flexible viewing
 - Configurable server settings through options page
 
+## Project Structure
+
+- `/server` - Go backend server providing WebSocket and HTTP endpoints
+- `/meet` - Chrome extension for Google Meet integration
+- `/docker` - Docker-related files and configurations
+
 ## Components
 
 ### 1. Google Meet Chrome Extension
@@ -100,6 +106,25 @@ docker run -p 8080:8080 \
   shabe
 ```
 
+## Development
+
+### Extension Structure
+
+- `meet/manifest.json` - Extension configuration and permissions
+- `meet/content.js` - Main content script for Google Meet integration
+- `meet/background.js` - Background service worker for auth handling
+- `meet/options.js` - Settings page functionality
+- `meet/options.html` - Settings page UI
+- `meet/styles.css` - UI styling
+
+### Server Structure
+
+- `main.go` - Main server implementation
+- `auth/` - Authentication handlers and middleware
+- `chat/` - WebSocket and room management
+- `config/` - Configuration management
+- `go.mod` & `go.sum` - Go module dependencies
+
 ## Usage
 
 1. Join a Google Meet call
@@ -120,24 +145,24 @@ Access the extension settings through the options page:
    - View connection status
    - Sign in/out of your Google account
 
-## Development
+## Building and Deployment
 
-### Extension Structure
+### Server
 
-- `meet/manifest.json` - Extension configuration and permissions
-- `meet/content.js` - Main content script for Google Meet integration
-- `meet/background.js` - Background service worker for auth handling
-- `meet/options.js` - Settings page functionality
-- `meet/options.html` - Settings page UI
-- `meet/styles.css` - UI styling
+```bash
+cd server
+docker build -t shabe-server .
+docker run -p 8080:8080 shabe-server
+```
 
-### Server Structure
+### Chrome Extension
 
-- `main.go` - Main server implementation
-- `auth/` - Authentication handlers and middleware
-- `chat/` - WebSocket and room management
-- `config/` - Configuration management
-- `go.mod` & `go.sum` - Go module dependencies
+1. Zip the contents of the `meet` directory
+2. Upload to the Chrome Web Store Developer Dashboard
+
+## Environment Variables
+
+See `.env.example` for required environment variables.
 
 ## Authentication
 
@@ -152,3 +177,7 @@ Shabe uses Google OAuth2 for secure user authentication:
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.

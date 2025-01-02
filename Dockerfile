@@ -5,16 +5,16 @@ FROM golang:1.21-alpine AS builder
 WORKDIR /app
 
 # Copy go mod and sum files
-COPY go.mod go.sum ./
+COPY server/go.mod server/go.sum ./
 
 # Download dependencies
 RUN go mod download
 
 # Copy source code
-COPY . .
+COPY server/ .
 
 # Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -o shabe
+RUN CGO_ENABLED=0 GOOS=linux go build -o main
 
 # Final stage
 FROM alpine:latest
@@ -22,7 +22,7 @@ FROM alpine:latest
 WORKDIR /app
 
 # Copy the binary from builder
-COPY --from=builder /app/shabe .
+COPY --from=builder /app/main .
 # Copy frontend files
 COPY --from=builder /app/static ./static
 
@@ -33,4 +33,4 @@ ENV PORT=8080
 EXPOSE 8080
 
 # Run the binary
-CMD ["./shabe"]
+CMD ["./main"]

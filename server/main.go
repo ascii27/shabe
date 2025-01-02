@@ -4,12 +4,12 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"shabe/auth"
-	"shabe/chat"
-	"shabe/translate"
-	"shabe/websocket"
 
 	"github.com/gorilla/mux"
+	"shabe/server/auth"
+	"shabe/server/chat"
+	"shabe/server/translate"
+	"shabe/server/websocket"
 )
 
 func main() {

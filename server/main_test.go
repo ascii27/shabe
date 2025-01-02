@@ -4,15 +4,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"shabe/auth"
-	"shabe/chat"
-	"shabe/translate"
-	wshandler "shabe/websocket"
-	"strings"
 	"testing"
+
+	"shabe/server/auth"
+	"shabe/server/chat"
+	"shabe/server/translate"
+	wshandler "shabe/server/websocket"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/websocket"
+	"strings"
 )
 
 func setupTestServer(t *testing.T) *httptest.Server {

@@ -3,14 +3,14 @@ package websocket
 import (
 	"net/http"
 	"net/http/httptest"
-	"net/url"
-	"shabe/auth"
-	"shabe/chat"
-	"shabe/translate"
+	"strings"
 	"testing"
 
+	"shabe/server/auth"
+	"shabe/server/chat"
+	"shabe/server/translate"
+
 	"github.com/gorilla/websocket"
-	"github.com/stretchr/testify/assert"
 )
 
 type mockAuth struct {
