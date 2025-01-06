@@ -1,4 +1,5 @@
 # Shabe - Real-time Translation for Google Meet
+<img src="shabe-icon.png" alt="Shabe" width="128" height="128">
 
 Shabe is a Chrome extension that provides real-time translation in Google Meet, enabling seamless communication across language barriers.
 
