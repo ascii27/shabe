@@ -45,7 +45,13 @@ export async function getServerUrl() {
     chrome.storage.local.get(['serverAddress', 'serverPort'], (items) => {
       const address = items.serverAddress || DEFAULT_SETTINGS.serverAddress;
       const port = items.serverPort || DEFAULT_SETTINGS.serverPort;
-      resolve(`http://${address}:${port}`);
+
+      if (port == 80) {
+        resolve(`http://${address}`);
+      } else {
+        resolve(`http://${address}:${port}`);
+      }
+
     });
   });
 }
