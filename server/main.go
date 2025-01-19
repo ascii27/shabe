@@ -17,7 +17,7 @@ func main() {
 	authManager := auth.NewManager(&auth.Config{
 		ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
 		ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
-		RedirectURL:  os.Getenv("GOOGLE_REDIRECT_URL"),
+		RedirectURL:  os.Getenv("OAUTH_REDIRECT_URL"),
 	})
 
 	roomManager := chat.NewRoomManager()
