@@ -39,8 +39,8 @@ type Authenticator interface {
 
 // Manager handles OAuth2 authentication
 type Manager struct {
-	config   *oauth2.Config
-	Exchange func(code string) (string, error)
+	config          *oauth2.Config
+	Exchange        func(code string) (string, error)
 	getUserInfoFunc func(token string) (*UserInfo, error) // private field for mocking
 }
 
@@ -218,7 +218,7 @@ func (m *Manager) HandleAuthVerify(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"authenticated": true,
-		"user":         userInfo,
+		"user":          userInfo,
 	})
 }
 

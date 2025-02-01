@@ -388,10 +388,7 @@ async function connectToRoom() {
       const data = JSON.parse(event.data);
       if (data.type === 'message') {
         console.log('Displaying message:', data);
-        const isSelf = data.name === userName;
-        if (!isSelf) {
-          displayMessage(data.text, isSelf, data.name || 'Anonymous');
-        }
+        displayMessage(data.text, false, data.name || 'Anonymous');
       }
     } catch (error) {
       console.error('Error handling websocket message:', error);

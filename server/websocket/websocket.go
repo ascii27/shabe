@@ -71,7 +71,7 @@ func (ws *WebSocket) upgradeConnection(w http.ResponseWriter, r *http.Request) (
 	if token == "" {
 		return nil, fmt.Errorf("token is required")
 	}
-	
+
 	roomID := r.URL.Query().Get("roomId")
 	if roomID == "" {
 		return nil, fmt.Errorf("roomId is required")
@@ -90,7 +90,7 @@ func (ws *WebSocket) upgradeConnection(w http.ResponseWriter, r *http.Request) (
 func (ws *WebSocket) setupClientAndRoom(r *http.Request, conn *websocket.Conn) (*chat.Client, *chat.Room, error) {
 	roomID := r.URL.Query().Get("roomId")
 	token := r.URL.Query().Get("token")
-	
+
 	userInfo, err := ws.authManager.GetUserInfo(token)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to get user info: %v", err)
@@ -157,6 +157,8 @@ func (ws *WebSocket) handleChatMessage(msg Message, client *chat.Client, room *c
 		return nil
 	}
 
+	log.Printf("Got Message: %s from %s", msg.Text, msg.Name)
+
 	room.BroadcastMessage(func(c *chat.Client) error {
 		// Skip sending message back to sender
 		if c == client {
@@ -169,6 +171,8 @@ func (ws *WebSocket) handleChatMessage(msg Message, client *chat.Client, room *c
 
 // sendMessage sends a message to a client
 func (ws *WebSocket) sendMessage(client *chat.Client, text, name string) error {
+	log.Printf("Send Message: %s to %s", text, client.GetName())
+
 	return client.WriteJSON(Message{
 		Type: "message",
 		Text: text,
