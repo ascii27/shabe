@@ -48,6 +48,8 @@ export async function getServerUrl() {
 
       if (port == 80) {
         resolve(`http://${address}`);
+      } else if (port == 443) {
+        resolve(`https://${address}`);
       } else {
         resolve(`http://${address}:${port}`);
       }
