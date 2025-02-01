@@ -11,7 +11,8 @@
   ],
   "host_permissions": [
     "http://*/*",
-    "https://meet.google.com/*"
+    "https://meet.google.com/*",
+    "https://secure.skeletonarmy.dev/*"
   ],
   "background": {
     "service_worker": "background.js",
