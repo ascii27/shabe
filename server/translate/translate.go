@@ -34,7 +34,7 @@ func (t *OpenAITranslator) Translate(text, fromLang, toLang string) (string, err
 	resp, err := t.client.CreateChatCompletion(
 		context.Background(),
 		openai.ChatCompletionRequest{
-			Model: openai.GPT3Dot5Turbo,
+			Model: openai.GPT4oMini20240718,
 			Messages: []openai.ChatCompletionMessage{
 				{
 					Role:    openai.ChatMessageRoleUser,
@@ -66,10 +66,10 @@ type MockTranslator struct {
 func NewMockTranslator() *MockTranslator {
 	return &MockTranslator{
 		translations: map[string]string{
-			"en->ja:hello":          "こんにちは",
-			"ja->en:こんにちは":        "hello",
-			"en->ja:how are you":    "お元気ですか？",
-			"ja->en:お元気ですか？":      "how are you",
+			"en->ja:hello":       "こんにちは",
+			"ja->en:こんにちは":       "hello",
+			"en->ja:how are you": "お元気ですか？",
+			"ja->en:お元気ですか？":     "how are you",
 		},
 	}
 }
